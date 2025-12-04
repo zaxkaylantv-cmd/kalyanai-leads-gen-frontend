@@ -37,14 +37,12 @@ export interface Campaign {
 
 export interface SocialPost {
   id: string;
-  campaignId: string | null;
-  channel: string | null;
+  campaignId: string;
+  channel?: string;
   content: string;
-  tone: string | null;
-  scheduledFor: string | null;
-  status: string;
-  publishedAt: string | null;
-  createdAt: string;
+  status?: string;
+  createdAt?: string;
+  [key: string]: any;
 }
 
 export interface SocialPostSuggestion {
@@ -54,6 +52,33 @@ export interface SocialPostSuggestion {
   tone: string;
   content: string;
   scheduledForSuggestion: string | null;
+}
+
+export interface ProspectEnrichmentPreview {
+  prospectId: string;
+  companyName: string | null;
+  contactName: string | null;
+  email: string | null;
+  website: string | null;
+  status: string | null;
+  fitScore: number;
+  fitLabel: string;
+  primaryPain: string;
+  summary: string;
+}
+
+export type ProspectStatus = "uncontacted" | "contacted" | "qualified" | "bad-fit";
+
+export interface ProspectNote {
+  id: number | string;
+  prospectId: string;
+  content: string;
+  createdAt?: string;
+}
+
+export interface PushToLeadDeskResult {
+  prospect: Prospect;
+  leaddeskLead: any;
 }
 
 const BASE_URL = "/leads-gen-api";
@@ -84,9 +109,12 @@ export async function fetchCampaigns(): Promise<Campaign[]> {
   return res.json();
 }
 
-export async function fetchSocialPosts(campaignId?: string): Promise<SocialPost[]> {
-  const params = campaignId ? `?campaignId=${encodeURIComponent(campaignId)}` : "";
-  const res = await fetch(`${BASE_URL}/social-posts${params}`);
+export async function fetchSocialPosts(
+  campaignId: string,
+): Promise<SocialPost[]> {
+  const res = await fetch(
+    `/leads-gen-api/social-posts?campaignId=${encodeURIComponent(campaignId)}`,
+  );
   if (!res.ok) {
     throw new Error(`Failed to fetch social posts (${res.status})`);
   }
@@ -102,5 +130,90 @@ export async function fetchPostSuggestionsForCampaign(
   if (!res.ok) {
     throw new Error(`Failed to fetch suggestions (${res.status})`);
   }
+  return res.json();
+}
+
+export async function fetchProspectEnrichmentPreview(
+  sourceId: string,
+): Promise<ProspectEnrichmentPreview[]> {
+  const res = await fetch(
+    `${BASE_URL}/ai/sources/${encodeURIComponent(sourceId)}/enrich-preview`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch enrichment preview (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function updateProspectStatus(
+  prospectId: string,
+  status: ProspectStatus,
+): Promise<Prospect> {
+  const response = await fetch(`/leads-gen-api/prospects/${prospectId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update prospect status (${response.status})`);
+  }
+
+  return response.json();
+}
+
+export async function fetchProspectNotes(prospectId: string): Promise<ProspectNote[]> {
+  const res = await fetch(`/leads-gen-api/prospects/${prospectId}/notes`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch prospect notes (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function addProspectNote(
+  prospectId: string,
+  content: string,
+): Promise<ProspectNote> {
+  const res = await fetch(`/leads-gen-api/prospects/${prospectId}/notes`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ content }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to add prospect note (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function pushProspectToLeadDesk(
+  prospectId: string,
+): Promise<PushToLeadDeskResult> {
+  const res = await fetch(`/leads-gen-api/prospects/${prospectId}/push-to-leaddesk`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to push prospect to Lead Desk (${res.status})`);
+  }
+
   return res.json();
 }
