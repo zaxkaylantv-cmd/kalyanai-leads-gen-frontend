@@ -89,6 +89,9 @@ export function ProspectDetailPanel({
           {prospect.email && (
             <p className="text-xs text-slate-500">{prospect.email}</p>
           )}
+          {prospect.phone && (
+            <p className="text-xs text-slate-500">{prospect.phone}</p>
+          )}
         </div>
         <button
           type="button"

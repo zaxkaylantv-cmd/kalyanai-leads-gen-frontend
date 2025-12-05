@@ -46,12 +46,12 @@ export interface SocialPost {
 }
 
 export interface SocialPostSuggestion {
-  id: string;
-  campaignId: string;
-  channel: string;
-  tone: string;
+  id?: string;
+  channel?: string;
   content: string;
-  scheduledForSuggestion: string | null;
+  tone?: string;
+  imageIdea?: string | null;
+  [key: string]: any;
 }
 
 export interface ProspectEnrichmentPreview {
@@ -79,6 +79,28 @@ export interface ProspectNote {
 export interface PushToLeadDeskResult {
   prospect: Prospect;
   leaddeskLead: any;
+}
+
+export interface BulkProspectInput {
+  companyName: string;
+  contactName?: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  tags?: string | string[];
+  status?: string;
+  ownerName?: string;
+}
+
+export interface CreateProspectInput {
+  sourceId: string;
+  companyName: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  status?: string;
 }
 
 const BASE_URL = "/leads-gen-api";
@@ -130,6 +152,73 @@ export async function fetchPostSuggestionsForCampaign(
   if (!res.ok) {
     throw new Error(`Failed to fetch suggestions (${res.status})`);
   }
+  return res.json();
+}
+
+export async function fetchCampaignPostSuggestions(
+  campaignId: string,
+): Promise<SocialPostSuggestion[]> {
+  const res = await fetch(
+    `/leads-gen-api/ai/campaigns/${encodeURIComponent(campaignId)}/suggest-posts`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch AI post suggestions (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export interface CreateSocialPostInput {
+  campaignId: string;
+  channel: string;
+  content: string;
+  status?: string;
+}
+
+export type SocialPostStatus = "draft" | "scheduled" | "sent" | "archived";
+
+export async function createSocialPost(
+  input: CreateSocialPostInput,
+): Promise<SocialPost> {
+  const res = await fetch('/leads-gen-api/social-posts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to create social post (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function updateSocialPostStatus(
+  postId: string | number,
+  status: SocialPostStatus,
+): Promise<SocialPost> {
+  const res = await fetch(`/leads-gen-api/social-posts/${postId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to update social post status (${res.status})`);
+  }
+
   return res.json();
 }
 
@@ -213,6 +302,44 @@ export async function pushProspectToLeadDesk(
 
   if (!res.ok) {
     throw new Error(`Failed to push prospect to Lead Desk (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function bulkImportProspects(
+  sourceId: string,
+  prospects: BulkProspectInput[],
+): Promise<void> {
+  const res = await fetch(
+    `/leads-gen-api/sources/${encodeURIComponent(sourceId)}/prospects/bulk`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prospects }),
+    },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Bulk import failed (${res.status})`);
+  }
+}
+
+export async function createProspect(
+  input: CreateProspectInput,
+): Promise<Prospect> {
+  const res = await fetch("/leads-gen-api/prospects", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to create prospect (${res.status})`);
   }
 
   return res.json();

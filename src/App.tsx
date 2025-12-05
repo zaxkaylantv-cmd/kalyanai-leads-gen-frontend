@@ -1,26 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   fetchCampaigns,
+  fetchCampaignPostSuggestions,
   fetchPostSuggestionsForCampaign,
   fetchProspects,
   fetchSocialPosts,
   fetchSources,
   fetchProspectEnrichmentPreview,
+  createSocialPost,
+  updateSocialPostStatus,
   updateProspectStatus,
   fetchProspectNotes,
   addProspectNote,
   pushProspectToLeadDesk,
+  createProspect,
 } from "./api";
+import ProspectManualForm from "./components/ProspectManualForm";
+import ProspectsCsvImport from "./components/ProspectsCsvImport";
 import type {
   Campaign,
   Prospect,
   SocialPost,
   SocialPostSuggestion,
+  SocialPostStatus,
   ProspectEnrichmentPreview,
   ProspectNote,
   ProspectStatus,
   PushToLeadDeskResult,
   Source,
+  CreateProspectInput,
 } from "./api";
 import { CampaignDetailPanel } from "./components/CampaignDetailPanel";
 import { ProspectDetailPanel } from "./components/ProspectDetailPanel";
@@ -32,6 +40,13 @@ function App() {
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
   const [socialPostsLoading, setSocialPostsLoading] = useState(false);
   const [socialPostsError, setSocialPostsError] = useState<string | null>(null);
+  const [postSuggestions, setPostSuggestions] = useState<SocialPostSuggestion[]>([]);
+  const [postSuggestionsLoading, setPostSuggestionsLoading] = useState(false);
+  const [postSuggestionsError, setPostSuggestionsError] = useState<string | null>(null);
+  const [savingSuggestionId, setSavingSuggestionId] = useState<string | null>(null);
+  const [saveSuggestionError, setSaveSuggestionError] = useState<string | null>(null);
+  const [updatingPostId, setUpdatingPostId] = useState<string | number | null>(null);
+  const [updatePostError, setUpdatePostError] = useState<string | null>(null);
   const [socialSuggestions, setSocialSuggestions] = useState<SocialPostSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +71,9 @@ function App() {
   const [lastPushedLeadDeskId, setLastPushedLeadDeskId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "uncontacted" | "contacted" | "qualified" | "bad-fit">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [prospectsReloadToken, setProspectsReloadToken] = useState(0);
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [showManualProspectForm, setShowManualProspectForm] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -93,7 +111,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [prospectsReloadToken]);
 
   const primarySource = sources[0];
   const primaryCampaign = campaigns[0];
@@ -157,6 +175,33 @@ function App() {
       return prospect.status === "uncontacted";
     })
     .slice(0, 5);
+  const globalCallQueueProspects = useMemo(() => {
+    if (!prospects || prospects.length === 0) return [];
+
+    const candidates = prospects.filter((prospect) => {
+      const enrichment = enrichmentByProspectId[prospect.id];
+      if (!enrichment) return false;
+      if (prospect.status !== "uncontacted") return false;
+      return true;
+    });
+
+    const sorted = [...candidates].sort((a, b) => {
+      const ea = enrichmentByProspectId[a.id];
+      const eb = enrichmentByProspectId[b.id];
+      const scoreA = ea?.fitScore ?? 0;
+      const scoreB = eb?.fitScore ?? 0;
+      return scoreB - scoreA;
+    });
+
+    return sorted.slice(0, 10);
+  }, [prospects, enrichmentByProspectId]);
+  const totalInView = statusAndSearchFilteredProspects.length;
+  const uncontactedCount = statusAndSearchFilteredProspects.filter(
+    (p) => p.status === "uncontacted",
+  ).length;
+  const qualifiedCount = statusAndSearchFilteredProspects.filter(
+    (p) => p.status === "qualified",
+  ).length;
 
   const selectedCampaign =
     selectedCampaignId != null
@@ -293,8 +338,13 @@ function App() {
     }
   };
 
+  const handleCreateProspect = async (input: CreateProspectInput) => {
+    await createProspect(input);
+    setProspectsReloadToken((prev) => prev + 1);
+  };
+
   const selectedProspect = selectedProspectId
-    ? sortedProspects.find((p) => p.id === selectedProspectId) ?? null
+    ? prospects.find((p) => p.id === selectedProspectId) ?? null
     : null;
 
   const selectedEnrichment = selectedProspect
@@ -310,6 +360,11 @@ function App() {
       setSocialPosts([]);
       setSocialPostsLoading(false);
       setSocialPostsError(null);
+      setPostSuggestions([]);
+      setPostSuggestionsLoading(false);
+      setPostSuggestionsError(null);
+      setSavingSuggestionId(null);
+      setSaveSuggestionError(null);
       return;
     }
 
@@ -340,6 +395,85 @@ function App() {
     };
   }, [selectedCampaignId]);
 
+  const handleGeneratePostSuggestions = async (campaignId: string) => {
+    try {
+      setPostSuggestionsLoading(true);
+      setPostSuggestionsError(null);
+      setPostSuggestions([]);
+
+      const suggestions = await fetchCampaignPostSuggestions(campaignId);
+      setPostSuggestions(suggestions);
+    } catch (err) {
+      console.error("Failed to fetch AI post suggestions", err);
+      setPostSuggestionsError("Could not generate AI suggestions. Please try again.");
+    } finally {
+      setPostSuggestionsLoading(false);
+    }
+  };
+
+  const handleUpdatePostStatus = async (
+    postId: string | number,
+    newStatus: SocialPostStatus,
+  ) => {
+    try {
+      setUpdatingPostId(postId);
+      setUpdatePostError(null);
+
+      const updated = await updateSocialPostStatus(postId, newStatus);
+
+      setSocialPosts((prev) =>
+        prev.map((post) =>
+          post.id === updated.id ? { ...post, status: updated.status } : post,
+        ),
+      );
+    } catch (err) {
+      console.error("Failed to update social post status", err);
+      setUpdatePostError("Could not update post status. Please try again.");
+    } finally {
+      setUpdatingPostId(null);
+    }
+  };
+
+  const handleDashboardGenerateSuggestionsClick = () => {
+    if (!campaigns || campaigns.length === 0) {
+      console.warn("No campaigns available for AI suggestions.");
+      return;
+    }
+
+    const targetCampaignId = selectedCampaignId || campaigns[0].id;
+
+    setSelectedCampaignId(targetCampaignId);
+    setActiveTab("campaigns");
+
+    handleGeneratePostSuggestions(targetCampaignId);
+    handleGenerateSuggestions();
+  };
+
+  const handleSaveSuggestionAsPost = async (suggestion: SocialPostSuggestion) => {
+    if (!selectedCampaign) return;
+
+    const suggestionKey = suggestion.id ?? suggestion.channel ?? "suggestion";
+
+    try {
+      setSavingSuggestionId(suggestionKey);
+      setSaveSuggestionError(null);
+
+      const post = await createSocialPost({
+        campaignId: selectedCampaign.id,
+        channel: suggestion.channel || "linkedin",
+        content: suggestion.content,
+        status: "draft",
+      });
+
+      setSocialPosts((prev) => [post, ...prev]);
+    } catch (err) {
+      console.error("Failed to save suggestion as post", err);
+      setSaveSuggestionError("Could not save this suggestion as a post.");
+    } finally {
+      setSavingSuggestionId(null);
+    }
+  };
+
   const prospectsTable = (
     <section className="rounded-2xl bg-white shadow-soft border border-slate-100 px-3 py-3 md:px-4 md:py-4">
       {loading && (
@@ -369,6 +503,9 @@ function App() {
                 </th>
                 <th className="px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   Email
+                </th>
+                <th className="px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  Phone
                 </th>
                 <th className="px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
                   Status
@@ -415,12 +552,15 @@ function App() {
                           : prospect.contactName
                         : "-"}
                     </td>
-                    <td className="px-3 py-2 align-top">
-                      {prospect.email || "-"}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <span className={statusClasses}>{status}</span>
-                    </td>
+                  <td className="px-3 py-2 align-top">
+                    {prospect.email || "-"}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    {prospect.phone || "—"}
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <span className={statusClasses}>{status}</span>
+                  </td>
                     <td className="px-3 py-2 align-top">
                       {e ? (
                         <div className="space-y-0.5">
@@ -526,6 +666,10 @@ function App() {
         {activeTab === "dashboard" && (
           <main className="mt-4">
             <section className="rounded-3xl bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] border border-slate-100 px-4 py-5 md:px-6 md:py-6 space-y-5 md:space-y-6">
+              {(() => {
+                console.log("Dashboard Call queue card rendered");
+                return null;
+              })()}
               <div className="space-y-1">
                 <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-slate-400">
                   Overview
@@ -638,7 +782,7 @@ function App() {
                       {primaryCampaign && (
                         <button
                           type="button"
-                          onClick={handleGenerateSuggestions}
+                          onClick={handleDashboardGenerateSuggestionsClick}
                           className={
                             "inline-flex items-center justify-center rounded-full px-3.5 py-1.5 text-[11px] font-medium shadow-sm transition " +
                             (suggestionsLoading
@@ -733,6 +877,88 @@ function App() {
                     )}
                   </section>
 
+                  {/* Call queue card */}
+                  <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div>
+                        <p className="text-[11px] font-semibold tracking-[0.18em] text-emerald-700 uppercase">
+                          Call queue
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                          Top uncontacted prospects
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          AI-ordered by fit across all sources. Click a row to open it in the Prospects view.
+                        </p>
+                      </div>
+                    </div>
+
+                    {globalCallQueueProspects.length === 0 ? (
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        No enriched uncontacted prospects yet. Import a list, run AI enrichment,
+                        and they will appear here.
+                      </p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {globalCallQueueProspects.map((prospect) => {
+                          const enrichment = enrichmentByProspectId[prospect.id];
+
+                          return (
+                            <button
+                              key={prospect.id}
+                              type="button"
+                              className="w-full text-left rounded-2xl border border-slate-100 bg-slate-50/70 px-3 py-2 hover:bg-slate-100 transition cursor-pointer"
+                              onClick={() => {
+                                console.log("Call queue click", {
+                                  id: prospect.id,
+                                  sourceId: prospect.sourceId,
+                                });
+
+                                if (prospect.sourceId) {
+                                  setSelectedSourceId(prospect.sourceId);
+                                } else {
+                                  setSelectedSourceId("all");
+                                }
+
+                                setStatusFilter("all");
+                                setFitFilter("all");
+                                setSearchQuery("");
+
+                                setSelectedProspectId(prospect.id);
+
+                                setActiveTab("prospects");
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-slate-800 truncate">
+                                    {prospect.companyName || "Unnamed company"}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] text-slate-500 truncate">
+                                    {prospect.contactName || prospect.email || "No contact"}
+                                  </p>
+                                  {prospect.sourceId && (
+                                    <p className="mt-0.5 text-[11px] text-slate-400 truncate">
+                                      Source: {prospect.sourceId}
+                                    </p>
+                                  )}
+                                </div>
+                                {enrichment && (
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-[2px] text-[11px] font-medium text-amber-700">
+                                      {(enrichment.fitLabel || "fit").toLowerCase()} ·{" "}
+                                      {enrichment.fitScore ?? 0}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
                   <section className="rounded-2xl bg-white shadow-sm border border-slate-100 px-4 py-4 md:px-5 md:py-4">
                     <h2 className="text-sm font-semibold tracking-tight mb-2 text-[#49a682]">Sources</h2>
                     <p className="text-xs text-slate-500 leading-relaxed">
@@ -808,22 +1034,47 @@ function App() {
                               Contact
                             </th>
                             <th className="px-3 py-2 font-medium">
+                              Phone
+                            </th>
+                            <th className="px-3 py-2 font-medium">
                               Status
                             </th>
                           </tr>
                         </thead>
                         <tbody>
                           {prospects.map((prospect) => (
-                            <tr key={prospect.id}>
-                              <td className="px-3 py-2 border-t border-slate-100">
+                            <tr
+                              key={prospect.id}
+                              className="group cursor-pointer hover:bg-slate-50"
+                              onClick={() => {
+                                console.log("Dashboard Prospects click", {
+                                  id: prospect.id,
+                                  sourceId: prospect.sourceId,
+                                });
+                                if (prospect.sourceId) {
+                                  setSelectedSourceId(prospect.sourceId);
+                                } else {
+                                  setSelectedSourceId("all");
+                                }
+                                setStatusFilter("all");
+                                setFitFilter("all");
+                                setSearchQuery("");
+                                setSelectedProspectId(prospect.id);
+                                setActiveTab("prospects");
+                              }}
+                            >
+                              <td className="px-3 py-2 border-t border-slate-100 text-[11px] text-slate-800 truncate">
                                 {prospect.companyName || "-"}
                               </td>
-                              <td className="px-3 py-2 border-t border-slate-100">
+                              <td className="px-3 py-2 border-t border-slate-100 text-[11px] text-slate-600 truncate">
                                 {prospect.contactName
                                   ? prospect.role
                                     ? `${prospect.contactName} (${prospect.role})`
                                     : prospect.contactName
                                   : "-"}
+                              </td>
+                              <td className="px-3 py-2 border-t border-slate-100 text-[11px] text-slate-600 truncate">
+                                {prospect.phone || "—"}
                               </td>
                               <td className="px-3 py-2 border-t border-slate-100">
                                 {(() => {
@@ -881,7 +1132,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.6fr)] gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)] gap-4">
                 <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6">
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <div>
@@ -945,9 +1196,21 @@ function App() {
                     <CampaignDetailPanel
                       campaign={selectedCampaign}
                       onClose={handleCloseCampaignDetail}
-                      socialPosts={socialPosts}
+                      socialPosts={socialPosts.filter((post) => post.status !== "archived")}
                       socialPostsLoading={socialPostsLoading}
                       socialPostsError={socialPostsError}
+                      postSuggestions={postSuggestions}
+                      postSuggestionsLoading={postSuggestionsLoading}
+                      postSuggestionsError={postSuggestionsError}
+                      onGenerateSuggestions={() =>
+                        handleGeneratePostSuggestions(selectedCampaign.id)
+                      }
+                      onSaveSuggestionAsPost={handleSaveSuggestionAsPost}
+                      savingSuggestionId={savingSuggestionId}
+                      saveSuggestionError={saveSuggestionError}
+                      onUpdatePostStatus={handleUpdatePostStatus}
+                      updatingPostId={updatingPostId}
+                      updatePostError={updatePostError}
                     />
                   ) : (
                     <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6 h-full flex items-center justify-center">
@@ -964,9 +1227,21 @@ function App() {
                   <CampaignDetailPanel
                     campaign={selectedCampaign}
                     onClose={handleCloseCampaignDetail}
-                    socialPosts={socialPosts}
+                    socialPosts={socialPosts.filter((post) => post.status !== "archived")}
                     socialPostsLoading={socialPostsLoading}
                     socialPostsError={socialPostsError}
+                    postSuggestions={postSuggestions}
+                    postSuggestionsLoading={postSuggestionsLoading}
+                    postSuggestionsError={postSuggestionsError}
+                    onGenerateSuggestions={() =>
+                      handleGeneratePostSuggestions(selectedCampaign.id)
+                    }
+                    onSaveSuggestionAsPost={handleSaveSuggestionAsPost}
+                    savingSuggestionId={savingSuggestionId}
+                    saveSuggestionError={saveSuggestionError}
+                    onUpdatePostStatus={handleUpdatePostStatus}
+                    updatingPostId={updatingPostId}
+                    updatePostError={updatePostError}
                   />
                 </div>
               )}
@@ -976,86 +1251,128 @@ function App() {
 
         {activeTab === "prospects" && (
           <main className="mt-4">
-            <section className="rounded-3xl bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] border border-slate-100 px-4 py-5 md:px-6 md:py-6 space-y-4 md:space-y-5">
-              <div className="space-y-1">
-                <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-slate-400">
+            <div className="space-y-4">
+              <div>
+                <p className="text-[11px] font-semibold tracking-[0.18em] text-emerald-700 uppercase">
                   Prospects
                 </p>
-                <h2 className="text-lg md:text-xl font-semibold tracking-tight text-[#49a682]">
+                <h2 className="mt-1 text-xl font-semibold text-emerald-800">
                   All prospects
                 </h2>
-                <p className="text-xs md:text-sm text-slate-500 max-w-2xl">
+                <p className="mt-1 text-sm text-slate-600">
                   View and filter the prospects imported into this Lead Generation Engine. Use AI enrichment to create a warm call list and later push qualified leads into Lead Desk.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <p>
-                  Total prospects:{" "}
-                  <span className="font-semibold text-slate-900">
-                    {filteredProspects.length}
-                  </span>
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Ordered by AI fit when enrichment exists (use “Best-fit” to see only high-fit leads)
-                </p>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
-                    value={selectedSourceId}
-                    onChange={(e) =>
-                      setSelectedSourceId(e.target.value === "all" ? "all" : e.target.value)
-                    }
-                  >
-                    <option value="all">All sources</option>
-                    {sources.map((source) => (
-                      <option key={source.id} value={source.id}>
-                        {source.name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <select
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm"
-                    value={statusFilter}
-                    onChange={(e) =>
-                      setStatusFilter(e.target.value as "all" | "uncontacted" | "contacted" | "qualified" | "bad-fit")
-                    }
-                  >
-                    <option value="all">All statuses</option>
-                    <option value="uncontacted">Uncontacted</option>
-                    <option value="contacted">Contacted</option>
-                    <option value="qualified">Qualified</option>
-                    <option value="bad-fit">Bad fit</option>
-                  </select>
-
-                  <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 text-xs font-medium text-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => setFitFilter("all")}
-                      className={
-                        "rounded-full px-2 py-1 transition " +
-                        (fitFilter === "all"
-                          ? "bg-slate-900 text-white"
-                          : "text-slate-600 hover:bg-slate-50")
-                      }
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFitFilter("best")}
-                      className={
-                        "rounded-full px-2 py-1 transition " +
-                        (fitFilter === "best"
-                          ? "bg-[#ff6a3c] text-white"
-                          : "text-slate-600 hover:bg-slate-50")
-                      }
-                    >
-                      Best-fit
-                    </button>
+              <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                  <div className="rounded-2xl border border-slate-100 bg-slate-50/60 px-3 py-3">
+                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">
+                      Uncontacted
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">
+                      {uncontactedCount}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Prospects you haven’t reached out to yet.
+                    </p>
                   </div>
+
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-3 py-3">
+                    <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-[0.18em]">
+                      Qualified
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-emerald-900">
+                      {qualifiedCount}
+                    </p>
+                    <p className="mt-1 text-[11px] text-emerald-700">
+                      Prospects marked as a good fit.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50/60 px-3 py-3">
+                    <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-[0.18em]">
+                      In view
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-amber-900">
+                      {totalInView}
+                    </p>
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      Prospects matching your current filters.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-semibold text-slate-800">
+                    Prospects
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Total prospects:{" "}
+                    <span className="font-semibold text-slate-900">
+                      {filteredProspects.length}
+                    </span>{" "}
+                    · Ordered by AI fit when enrichment exists (use “Best-fit” to see only high-fit leads).
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
+                      value={selectedSourceId}
+                      onChange={(e) =>
+                        setSelectedSourceId(e.target.value === "all" ? "all" : e.target.value)
+                      }
+                    >
+                      <option value="all">All sources</option>
+                      {sources.map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 shadow-sm"
+                      value={statusFilter}
+                      onChange={(e) =>
+                        setStatusFilter(e.target.value as "all" | "uncontacted" | "contacted" | "qualified" | "bad-fit")
+                      }
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="uncontacted">Uncontacted</option>
+                      <option value="contacted">Contacted</option>
+                      <option value="qualified">Qualified</option>
+                      <option value="bad-fit">Bad fit</option>
+                    </select>
+
+                    <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 text-xs font-medium text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => setFitFilter("all")}
+                        className={
+                          "rounded-full px-2 py-1 transition " +
+                          (fitFilter === "all"
+                            ? "bg-slate-900 text-white"
+                            : "text-slate-600 hover:bg-slate-50")
+                        }
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFitFilter("best")}
+                        className={
+                          "rounded-full px-2 py-1 transition " +
+                          (fitFilter === "best"
+                            ? "bg-[#ff6a3c] text-white"
+                            : "text-slate-600 hover:bg-slate-50")
+                        }
+                      >
+                        Best-fit
+                      </button>
+                    </div>
 
                   <input
                     type="text"
@@ -1064,6 +1381,23 @@ function App() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                   />
+
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                    onClick={() => setShowCsvImport((prev) => !prev)}
+                  >
+                    {showCsvImport ? "Hide CSV import" : "Add prospects from CSV"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                    onClick={() => setShowManualProspectForm((prev) => !prev)}
+                  >
+                    {showManualProspectForm ? "Hide manual form" : "Add prospect"}
+                  </button>
+                </div>
 
                   {selectedSourceId !== "all" && (
                     <button
@@ -1081,67 +1415,111 @@ function App() {
                     </button>
                   )}
                 </div>
-              </div>
 
-              {enrichmentError && (
-                <p className="text-xs text-red-500">
-                  {enrichmentError}
-                </p>
-              )}
+                {showManualProspectForm && (
+                  <ProspectManualForm
+                    sources={sources}
+                    defaultSourceId={selectedSourceId !== "all" ? selectedSourceId : null}
+                    onCreate={handleCreateProspect}
+                    onClose={() => setShowManualProspectForm(false)}
+                  />
+                )}
 
-              {readyToCallProspects.length > 0 && (
-                <div className="mt-4 rounded-3xl bg-amber-50 border border-amber-100 px-4 py-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold text-slate-800">
-                        Ready to call
-                      </p>
-                      <p className="text-[11px] text-slate-600">
-                        {readyToCallProspects.length} enriched, uncontacted prospects from your current view. Start at the top and work your way down.
-                      </p>
+                {showCsvImport && (
+                  <ProspectsCsvImport
+                    sourceId={selectedSourceId !== "all" ? selectedSourceId : null}
+                    sources={sources}
+                    onImported={() => {
+                      setProspectsReloadToken((prev) => prev + 1);
+                    }}
+                  />
+                )}
+
+                {enrichmentError && (
+                  <p className="text-xs text-red-500">
+                    {enrichmentError}
+                  </p>
+                )}
+
+                {readyToCallProspects.length > 0 && (
+                  <div className="mt-4 rounded-3xl bg-amber-50 border border-amber-100 px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-800">
+                          Ready to call
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          {readyToCallProspects.length} enriched, uncontacted prospects from your current view. Start at the top and work your way down.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {readyToCallProspects.map((prospect) => {
+                        const enrichment = enrichmentByProspectId[prospect.id];
+                        return (
+                          <button
+                            key={prospect.id}
+                            type="button"
+                            onClick={() => setSelectedProspectId(prospect.id)}
+                            className="flex-1 min-w-[160px] rounded-2xl bg-white shadow-sm px-3 py-2 text-left hover:shadow-md transition"
+                          >
+                            <p className="text-xs font-semibold text-slate-800 truncate">
+                              {prospect.companyName || "Unnamed company"}
+                            </p>
+                            {prospect.contactName && (
+                              <p className="text-[11px] text-slate-600 truncate">
+                                {prospect.contactName}
+                              </p>
+                            )}
+                            {enrichment && (
+                              <p className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-[2px] text-[11px] font-medium text-amber-700">
+                                {(enrichment.fitLabel || "Hot").toLowerCase()} · {enrichment.fitScore ?? 0}
+                              </p>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
+                )}
 
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {readyToCallProspects.map((prospect) => {
-                      const enrichment = enrichmentByProspectId[prospect.id];
-                      return (
-                        <button
-                          key={prospect.id}
-                          type="button"
-                          onClick={() => setSelectedProspectId(prospect.id)}
-                          className="flex-1 min-w-[160px] rounded-2xl bg-white shadow-sm px-3 py-2 text-left hover:shadow-md transition"
-                        >
-                          <p className="text-xs font-semibold text-slate-800 truncate">
-                            {prospect.companyName || "Unnamed company"}
-                          </p>
-                          {prospect.contactName && (
-                            <p className="text-[11px] text-slate-600 truncate">
-                              {prospect.contactName}
-                            </p>
-                          )}
-                          {enrichment && (
-                            <p className="mt-1 inline-flex items-center rounded-full bg-amber-100 px-2 py-[2px] text-[11px] font-medium text-amber-700">
-                              {(enrichment.fitLabel || "Hot").toLowerCase()} · {enrichment.fitScore ?? 0}
-                            </p>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {!selectedProspect ? (
-                <div className="mt-4">
-                  {prospectsTable}
-                </div>
-              ) : (
-                <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)] gap-4">
-                  <div>
+                {!selectedProspect ? (
+                  <div className="mt-4">
                     {prospectsTable}
                   </div>
-                  <div className="hidden lg:block">
+                ) : (
+                  <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)] gap-4">
+                    <div>
+                      {prospectsTable}
+                    </div>
+                    <div className="hidden lg:block">
+                      <ProspectDetailPanel
+                        prospect={selectedProspect}
+                        enrichment={selectedEnrichment}
+                        onClose={handleCloseDetail}
+                        onChangeStatus={(newStatus) =>
+                          handleProspectStatusChange(selectedProspect.id, newStatus)
+                        }
+                        updatingStatus={updatingStatus}
+                        updateStatusError={updateStatusError}
+                        notes={prospectNotes}
+                        notesLoading={notesLoading}
+                        notesError={notesError}
+                        onAddNote={handleAddProspectNote}
+                        addingNote={addingNote}
+                        addNoteError={addNoteError}
+                        onPushToLeadDesk={() => handlePushToLeadDesk(selectedProspect.id)}
+                        pushingToLeadDesk={pushingToLeadDesk}
+                        pushToLeadDeskError={pushToLeadDeskError}
+                        lastPushedLeadDeskId={lastPushedLeadDeskId}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {selectedProspect && (
+                  <div className="mt-4 lg:hidden">
                     <ProspectDetailPanel
                       prospect={selectedProspect}
                       enrichment={selectedEnrichment}
@@ -1163,34 +1541,9 @@ function App() {
                       lastPushedLeadDeskId={lastPushedLeadDeskId}
                     />
                   </div>
-                </div>
-              )}
-
-              {selectedProspect && (
-                <div className="mt-4 lg:hidden">
-                  <ProspectDetailPanel
-                    prospect={selectedProspect}
-                    enrichment={selectedEnrichment}
-                    onClose={handleCloseDetail}
-                    onChangeStatus={(newStatus) =>
-                      handleProspectStatusChange(selectedProspect.id, newStatus)
-                    }
-                    updatingStatus={updatingStatus}
-                    updateStatusError={updateStatusError}
-                    notes={prospectNotes}
-                    notesLoading={notesLoading}
-                    notesError={notesError}
-                    onAddNote={handleAddProspectNote}
-                    addingNote={addingNote}
-                    addNoteError={addNoteError}
-                    onPushToLeadDesk={() => handlePushToLeadDesk(selectedProspect.id)}
-                    pushingToLeadDesk={pushingToLeadDesk}
-                    pushToLeadDeskError={pushToLeadDeskError}
-                    lastPushedLeadDeskId={lastPushedLeadDeskId}
-                  />
-                </div>
-              )}
-            </section>
+                )}
+              </div>
+            </div>
           </main>
         )}
       </div>
