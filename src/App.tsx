@@ -14,6 +14,7 @@ import {
   addProspectNote,
   pushProspectToLeadDesk,
   createProspect,
+  updateSourceIcp,
 } from "./api";
 import ProspectManualForm from "./components/ProspectManualForm";
 import ProspectsCsvImport from "./components/ProspectsCsvImport";
@@ -74,6 +75,19 @@ function App() {
   const [prospectsReloadToken, setProspectsReloadToken] = useState(0);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showManualProspectForm, setShowManualProspectForm] = useState(false);
+  const [editedSources, setEditedSources] = useState<Record<
+    string,
+    {
+      targetIndustry?: string | null;
+      companySize?: string | null;
+      roleFocus?: string | null;
+      mainAngle?: string | null;
+    }
+  >>({});
+  const [sourceSaveState, setSourceSaveState] = useState<Record<
+    string,
+    { saving: boolean; error: string | null; success: boolean }
+  >>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -113,8 +127,36 @@ function App() {
     };
   }, [prospectsReloadToken]);
 
+  function buildSourceIcpSummary(source?: Source | null): string | null {
+    if (!source) return null;
+    const parts: string[] = [];
+    if (source.targetIndustry) parts.push(`Target: ${source.targetIndustry}`);
+    if (source.companySize) parts.push(`Size: ${source.companySize}`);
+    if (source.roleFocus) parts.push(`Role: ${source.roleFocus}`);
+    if (source.mainAngle) parts.push(`Angle: ${source.mainAngle}`);
+    if (parts.length === 0) return null;
+    return parts.join(" · ");
+  }
+
   const primarySource = sources[0];
+  useEffect(() => {
+    setEditedSources((prev) => {
+      const next = { ...prev };
+      for (const source of sources) {
+        if (!next[source.id]) {
+          next[source.id] = {
+            targetIndustry: source.targetIndustry ?? null,
+            companySize: source.companySize ?? null,
+            roleFocus: source.roleFocus ?? null,
+            mainAngle: source.mainAngle ?? null,
+          };
+        }
+      }
+      return next;
+    });
+  }, [sources]);
   const primaryCampaign = campaigns[0];
+  const primarySourceIcpSummary = buildSourceIcpSummary(primarySource || null);
   const postsForPrimaryCampaign = primaryCampaign
     ? socialPosts.filter((post) => post.campaignId === primaryCampaign.id)
     : [];
@@ -212,6 +254,11 @@ function App() {
     selectedCampaignId != null
       ? campaigns.find((c) => c.id === selectedCampaignId) ?? null
       : null;
+  const selectedSource =
+    selectedSourceId !== "all"
+      ? sources.find((s) => s.id === selectedSourceId) ?? null
+      : null;
+  const selectedSourceIcpSummary = buildSourceIcpSummary(selectedSource);
 
   const handleCloseCampaignDetail = () => {
     setSelectedCampaignId(null);
@@ -346,6 +393,60 @@ function App() {
   const handleCreateProspect = async (input: CreateProspectInput) => {
     await createProspect(input);
     setProspectsReloadToken((prev) => prev + 1);
+  };
+
+  const handleSourceFieldChange = (
+    sourceId: string,
+    field: "targetIndustry" | "companySize" | "roleFocus" | "mainAngle",
+    value: string,
+  ) => {
+    setEditedSources((prev) => ({
+      ...prev,
+      [sourceId]: {
+        ...(prev[sourceId] || {}),
+        [field]: value,
+      },
+    }));
+    setSourceSaveState((prev) => ({
+      ...prev,
+      [sourceId]: { saving: false, error: null, success: false },
+    }));
+  };
+
+  const handleSaveSourceIcp = async (source: Source) => {
+    const current = editedSources[source.id] || {};
+    const payload = {
+      targetIndustry: current.targetIndustry ?? null,
+      companySize: current.companySize ?? null,
+      roleFocus: current.roleFocus ?? null,
+      mainAngle: current.mainAngle ?? null,
+    };
+
+    setSourceSaveState((prev) => ({
+      ...prev,
+      [source.id]: { saving: true, error: null, success: false },
+    }));
+
+    try {
+      const updated = await updateSourceIcp(source.id, payload);
+      setSources((prev) =>
+        prev.map((s) => (s.id === source.id ? { ...s, ...updated } : s)),
+      );
+      setSourceSaveState((prev) => ({
+        ...prev,
+        [source.id]: { saving: false, error: null, success: true },
+      }));
+    } catch (err: any) {
+      console.error("Failed to update source ICP", err);
+      setSourceSaveState((prev) => ({
+        ...prev,
+        [source.id]: {
+          saving: false,
+          error: "Could not save ICP fields. Backend PATCH /sources/:id may be missing.",
+          success: false,
+        },
+      }));
+    }
   };
 
   const selectedProspect = selectedProspectId
@@ -994,6 +1095,11 @@ function App() {
                             Type: {primarySource.type}
                           </p>
                         )}
+                        {primarySourceIcpSummary && (
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            ICP: {primarySourceIcpSummary}
+                          </p>
+                        )}
                       </div>
                     )}
                     {!loading && !error && !primarySource && (
@@ -1430,6 +1536,12 @@ function App() {
                   </button>
                 </div>
 
+                {selectedSourceIcpSummary && (
+                  <p className="text-[11px] text-slate-500">
+                    Source context: {selectedSourceIcpSummary}
+                  </p>
+                )}
+
                   {selectedSourceId !== "all" && (
                     <button
                       type="button"
@@ -1577,6 +1689,128 @@ function App() {
                 )}
               </div>
             </div>
+          </main>
+        )}
+
+        {activeTab === "settings" && (
+          <main className="mt-4">
+            <section className="rounded-3xl bg-white shadow-sm border border-slate-100 px-4 py-4 sm:px-6 sm:py-6 space-y-4">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-emerald-700">
+                  Settings
+                </p>
+                <h2 className="text-xl font-semibold text-emerald-800">Sources & ICP</h2>
+                <p className="text-sm text-slate-600">
+                  Internal-only: add context per source to guide enrichment (industry, size, role focus, and angle).
+                </p>
+              </div>
+
+              {sources.length === 0 ? (
+                <p className="text-sm text-slate-500">No sources yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {sources.map((source) => {
+                    const edited = editedSources[source.id] || {};
+                    const state = sourceSaveState[source.id] || {
+                      saving: false,
+                      error: null,
+                      success: false,
+                    };
+                    return (
+                      <div
+                        key={source.id}
+                        className="rounded-3xl bg-white shadow-sm border border-slate-100 p-4 sm:p-6 space-y-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{source.name}</p>
+                            {source.type && (
+                              <p className="text-xs text-slate-500">Type: {source.type}</p>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {buildSourceIcpSummary(source) || "No ICP context yet"}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-slate-500">Target industry</label>
+                            <input
+                              type="text"
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                              value={edited.targetIndustry ?? source.targetIndustry ?? ""}
+                              onChange={(e) =>
+                                handleSourceFieldChange(source.id, "targetIndustry", e.target.value)
+                              }
+                              placeholder="e.g. Marketing agencies"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-slate-500">Company size</label>
+                            <input
+                              type="text"
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                              value={edited.companySize ?? source.companySize ?? ""}
+                              onChange={(e) =>
+                                handleSourceFieldChange(source.id, "companySize", e.target.value)
+                              }
+                              placeholder="e.g. 10–50 staff"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-slate-500">Role focus</label>
+                            <input
+                              type="text"
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                              value={edited.roleFocus ?? source.roleFocus ?? ""}
+                              onChange={(e) =>
+                                handleSourceFieldChange(source.id, "roleFocus", e.target.value)
+                              }
+                              placeholder="e.g. Owners / MD / Ops"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs text-slate-500">Main angle</label>
+                            <input
+                              type="text"
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                              value={edited.mainAngle ?? source.mainAngle ?? ""}
+                              onChange={(e) =>
+                                handleSourceFieldChange(source.id, "mainAngle", e.target.value)
+                              }
+                              placeholder="e.g. Reduce admin time with AI"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3">
+                          {state.error && (
+                            <span className="text-xs text-red-500">{state.error}</span>
+                          )}
+                          {state.success && !state.error && (
+                            <span className="text-xs text-emerald-600">Saved</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSourceIcp(source)}
+                            disabled={state.saving}
+                            className={
+                              "inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition " +
+                              (state.saving
+                                ? "bg-slate-200 text-slate-500 cursor-wait"
+                                : "bg-[#ff6a3c] text-white hover:bg-[#ff5a28]")
+                            }
+                          >
+                            {state.saving ? "Saving…" : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </main>
         )}
       </div>

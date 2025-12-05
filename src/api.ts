@@ -5,6 +5,10 @@ export interface Source {
   description?: string | null;
   metadata?: string | null;
   createdAt: string;
+  targetIndustry?: string | null;
+  companySize?: string | null;
+  roleFocus?: string | null;
+  mainAngle?: string | null;
 }
 
 export interface Prospect {
@@ -112,6 +116,30 @@ export async function fetchSources(): Promise<Source[]> {
   if (!res.ok) {
     throw new Error(`Failed to fetch sources (${res.status})`);
   }
+  return res.json();
+}
+
+export async function updateSourceIcp(
+  id: string,
+  payload: {
+    targetIndustry?: string | null;
+    companySize?: string | null;
+    roleFocus?: string | null;
+    mainAngle?: string | null;
+  },
+) {
+  const res = await fetch(`${BASE_URL}/sources/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to update source (${res.status})`);
+  }
+
   return res.json();
 }
 

@@ -6,6 +6,46 @@ import type {
   ProspectNote,
 } from "../api";
 
+function normalizePrimaryPain(primaryPain?: string | null): string | null {
+  if (!primaryPain) return null;
+  let text = primaryPain.trim();
+
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    text = text.slice(1, -1).trim();
+  }
+
+  text = text.replace(/[.!?]+$/g, "").trim();
+
+  if (!text) return null;
+
+  return text;
+}
+
+const NEGATIVE_WORDS = ["poor", "inefficient", "limited", "weak", "bad"];
+
+function toOpportunityArea(primaryPain?: string | null): string {
+  const normalized = normalizePrimaryPain(primaryPain);
+  if (!normalized) {
+    return "how things are currently run";
+  }
+
+  let text = normalized;
+  for (const word of NEGATIVE_WORDS) {
+    const regex = new RegExp(`\\b${word}\\s+`, "gi");
+    text = text.replace(regex, "");
+  }
+
+  text = text.trim();
+  if (!text) {
+    return "how things are currently run";
+  }
+
+  return text;
+}
+
 interface ProspectDetailPanelProps {
   prospect: Prospect;
   sourceName?: string;
@@ -65,17 +105,18 @@ export function ProspectDetailPanel({
   const primaryPain = enrichment?.primaryPain;
   const summary = enrichment?.summary;
   const fitLabelScore = enrichment ? `${enrichment.fitLabel} · ${enrichment.fitScore}` : null;
+  const opportunityArea = toOpportunityArea(primaryPain);
 
   const callScriptLines = [
     `Hi ${contactName}, it’s Kalyan AI.`,
-    `I’m reaching out because it looks like ${companyName} may be ${primaryPain || "juggling too many manual processes"}.`,
+    `I’m reaching out because we work with companies like ${companyName} to streamline how they handle ${opportunityArea}.`,
     `Kalyan AI offers bespoke hosted AI software to automate processes and streamline operations, saving time and money, improving customer experience and increasing profit without taking on new staff.`,
     summary ? `From what we see: ${summary}` : `We can start small with a simple workflow to free time and keep leads warm.`,
     `I’d love to learn how you’re handling this today and see if a lightweight approach would help.`,
   ];
 
   const emailSubject = primaryPain
-    ? `Idea to help ${companyName} with ${primaryPain}`
+    ? `Idea to streamline ${opportunityArea} at ${companyName}`
     : `Quick idea for ${companyName}`;
 
   return (
@@ -208,8 +249,7 @@ export function ProspectDetailPanel({
             <div className="space-y-2">
               <p>Hi {contactName},</p>
               <p>
-                We’ve been looking at how {companyName} runs outreach and operations. It seems like{" "}
-                {primaryPain || "there’s room to streamline the manual steps and follow-ups"}.
+                We’ve been looking at how organisations like {companyName} handle {opportunityArea}, and there’s often an opportunity to simplify and improve this.
               </p>
               <p>
                 Kalyan AI offers bespoke hosted AI software to automate processes and streamline operations, saving time and money, improving customer experience and increasing profit without taking on new staff. Would you be open to a quick 15–20 minute chat to see if this could help?
