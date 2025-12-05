@@ -8,6 +8,7 @@ import type {
 
 interface ProspectDetailPanelProps {
   prospect: Prospect;
+  sourceName?: string;
   enrichment?: ProspectEnrichmentPreview;
   onClose: () => void;
   onChangeStatus: (newStatus: ProspectStatus) => void;
@@ -27,6 +28,7 @@ interface ProspectDetailPanelProps {
 
 export function ProspectDetailPanel({
   prospect,
+  sourceName,
   enrichment,
   onClose,
   onChangeStatus,
@@ -92,6 +94,9 @@ export function ProspectDetailPanel({
           {prospect.phone && (
             <p className="text-xs text-slate-500">{prospect.phone}</p>
           )}
+          <p className="text-xs text-slate-500">
+            Source: {sourceName ?? "Unknown source"}
+          </p>
         </div>
         <button
           type="button"

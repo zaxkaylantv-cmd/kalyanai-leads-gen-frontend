@@ -129,6 +129,11 @@ function App() {
     selectedSourceId === "all"
       ? prospects
       : prospects.filter((p) => p.sourceId === selectedSourceId);
+  const getSourceName = (sourceId: Prospect["sourceId"]) => {
+    if (!sourceId) return "Unknown source";
+    const match = sources.find((s) => s.id === sourceId);
+    return match?.name || "Unknown source";
+  };
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const statusAndSearchFilteredProspects = filteredProspects.filter((prospect) => {
     const matchesStatus =
@@ -347,6 +352,10 @@ function App() {
     ? prospects.find((p) => p.id === selectedProspectId) ?? null
     : null;
 
+  const selectedProspectSourceName = selectedProspect
+    ? getSourceName(selectedProspect.sourceId)
+    : "Unknown source";
+
   const selectedEnrichment = selectedProspect
     ? enrichmentByProspectId[selectedProspect.id]
     : undefined;
@@ -491,7 +500,8 @@ function App() {
       )}
 
       {!loading && !error && filteredProspects.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-100">
+        <div className="overflow-x-auto -mx-2 sm:mx-0">
+          <div className="overflow-hidden rounded-xl border border-slate-100 min-w-full">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50/80">
               <tr className="text-left">
@@ -578,27 +588,28 @@ function App() {
                       )}
                     </td>
                     <td className="px-3 py-2 align-top text-xs text-slate-500">
-                      {prospect.sourceId || "-"}
+                      {getSourceName(prospect.sourceId)}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </section>
   );
 
   return (
-    <div className="min-h-screen bg-pageBg text-textMain">
-      <div className="mx-auto max-w-6xl px-4 py-4 md:py-6 space-y-4 md:space-y-6">
-        <header className="flex items-center justify-between gap-4">
+    <div className="min-h-screen bg-pageBg text-textMain px-3 py-3 sm:px-4 sm:py-6">
+      <div className="mx-auto max-w-6xl space-y-4 sm:space-y-6">
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div className="space-y-0.5">
             <p className="text-xs font-medium tracking-[0.18em] uppercase text-slate-400">
               Kalyan AI
             </p>
-            <h1 className="text-xl md:text-2xl font-semibold tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">
               Lead Generation Engine
             </h1>
           </div>
@@ -612,60 +623,62 @@ function App() {
           </div>
         </header>
 
-        <nav className="mt-4 rounded-full bg-white shadow-sm border border-slate-100 px-1 py-1 flex flex-wrap items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab("dashboard")}
-            className={
-              "rounded-full text-xs font-medium px-3 py-1.5 shadow-sm transition " +
-              (activeTab === "dashboard"
-                ? "bg-[#ff6a3c] text-white"
-                : "bg-transparent text-slate-500 hover:bg-slate-50")
-            }
-          >
-            Dashboard
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("campaigns")}
-            className={
-              "rounded-full px-3 py-1.5 text-xs font-medium transition " +
-              (activeTab === "campaigns"
-                ? "bg-slate-100 text-slate-700"
-                : "text-slate-500 hover:bg-slate-50")
-            }
-          >
-            Campaigns
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("prospects")}
-            className={
-              "rounded-full px-3 py-1.5 text-xs font-medium transition " +
-              (activeTab === "prospects"
-                ? "bg-slate-900 text-white"
-                : "text-slate-500 hover:bg-slate-50")
-            }
-          >
-            Prospects
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            className={
-              "rounded-full px-3 py-1.5 text-xs font-medium transition " +
-              (activeTab === "settings"
-                ? "bg-slate-100 text-slate-700"
-                : "text-slate-500 hover:bg-slate-50")
-            }
-          >
-            Settings
-          </button>
+        <nav className="mt-4 rounded-full bg-white shadow-sm border border-slate-100 px-1 py-1">
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-2 -mx-2 px-2 sm:pb-0 sm:mx-0 sm:px-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab("dashboard")}
+              className={
+                "rounded-full text-xs sm:text-sm font-medium px-3 py-1.5 shadow-sm transition " +
+                (activeTab === "dashboard"
+                  ? "bg-[#ff6a3c] text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50")
+              }
+            >
+              Dashboard
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("campaigns")}
+              className={
+                "rounded-full px-3 py-1.5 text-xs sm:text-sm font-medium shadow-sm transition " +
+                (activeTab === "campaigns"
+                  ? "bg-[#ff6a3c] text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50")
+              }
+            >
+              Campaigns
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("prospects")}
+              className={
+                "rounded-full px-3 py-1.5 text-xs sm:text-sm font-medium shadow-sm transition " +
+                (activeTab === "prospects"
+                  ? "bg-[#ff6a3c] text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50")
+              }
+            >
+              Prospects
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("settings")}
+              className={
+                "rounded-full px-3 py-1.5 text-xs sm:text-sm font-medium shadow-sm transition " +
+                (activeTab === "settings"
+                  ? "bg-[#ff6a3c] text-white"
+                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50")
+              }
+            >
+              Settings
+            </button>
+          </div>
         </nav>
 
         {activeTab === "dashboard" && (
           <main className="mt-4">
-            <section className="rounded-3xl bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] border border-slate-100 px-4 py-5 md:px-6 md:py-6 space-y-5 md:space-y-6">
+            <section className="rounded-3xl bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] border border-slate-100 px-3 py-4 sm:px-6 sm:py-6 space-y-5 sm:space-y-6">
               {(() => {
                 console.log("Dashboard Call queue card rendered");
                 return null;
@@ -682,7 +695,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="grid gap-3 md:gap-4 md:grid-cols-3 mt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4 mt-4">
                 <div className="rounded-2xl bg-gradient-to-b from-[#ffe4d6]/70 via-cardBg to-cardBg shadow-card p-[1.5px]">
                   <div className="rounded-[1rem] bg-cardBg border border-borderSoft px-4 py-3 flex flex-col gap-1.5">
                     <div className="flex items-center justify-between gap-2">
@@ -939,7 +952,7 @@ function App() {
                                   </p>
                                   {prospect.sourceId && (
                                     <p className="mt-0.5 text-[11px] text-slate-400 truncate">
-                                      Source: {prospect.sourceId}
+                                      Source: {getSourceName(prospect.sourceId)}
                                     </p>
                                   )}
                                 </div>
@@ -1020,7 +1033,8 @@ function App() {
                     <p className="mt-3 text-sm text-red-500">{error}</p>
                   )}
                   {!loading && !error && (
-                    <div className="mt-3 overflow-hidden rounded-xl border border-slate-100 bg-white">
+                    <div className="mt-3 overflow-x-auto -mx-2 sm:mx-0">
+                      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white min-w-full">
                       <p className="text-xs text-slate-500 mb-2 px-3 pt-2">
                         Showing {prospects.length} prospect{prospects.length === 1 ? "" : "s"} for this engine.
                       </p>
@@ -1109,6 +1123,7 @@ function App() {
                           )}
                         </tbody>
                       </table>
+                      </div>
                     </div>
                   )}
                 </section>
@@ -1119,12 +1134,12 @@ function App() {
 
         {activeTab === "campaigns" && (
           <main className="mt-4">
-            <div className="space-y-4">
+            <div className="space-y-4 sm:space-y-6">
               <div>
                 <p className="text-[11px] font-semibold tracking-[0.18em] text-emerald-700 uppercase">
-                  Campaigns
+                  CAMPAIGNS
                 </p>
-                <h2 className="mt-1 text-xl font-semibold text-emerald-800">
+                <h2 className="mt-1 text-xl sm:text-2xl font-semibold text-emerald-800">
                   AI-powered outreach campaigns
                 </h2>
                 <p className="mt-1 text-sm text-slate-600">
@@ -1132,7 +1147,7 @@ function App() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)] gap-4">
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-[1.1fr,1.7fr] gap-4">
                 <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6">
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <div>
@@ -1156,12 +1171,19 @@ function App() {
                           key={campaign.id}
                           type="button"
                           onClick={() => setSelectedCampaignId(campaign.id)}
-                          className={`w-full text-left rounded-2xl border px-3 py-2 text-sm transition ${
+                          className={`w-full text-left rounded-2xl text-sm transition ${
                             selectedCampaignId === campaign.id
-                              ? "border-emerald-400 bg-emerald-50"
-                              : "border-slate-100 bg-white hover:bg-slate-50"
+                              ? "bg-gradient-to-b from-[#ffe4d6]/70 via-cardBg to-cardBg shadow-card p-[1.5px]"
+                              : "border border-slate-100 bg-white hover:bg-slate-50 px-3 py-2"
                           }`}
                         >
+                          <div
+                            className={`${
+                              selectedCampaignId === campaign.id
+                                ? "rounded-[1rem] bg-white border border-borderSoft px-3 py-2"
+                                : ""
+                            }`}
+                          >
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0">
                               <p className="font-semibold text-slate-800 truncate">
@@ -1185,13 +1207,14 @@ function App() {
                               </span>
                             )}
                           </div>
+                          </div>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
 
-                <div className="hidden lg:block">
+                <div className="hidden lg:block rounded-3xl bg-white shadow-sm p-4 sm:p-6 h-full">
                   {selectedCampaign ? (
                     <CampaignDetailPanel
                       campaign={selectedCampaign}
@@ -1213,7 +1236,7 @@ function App() {
                       updatePostError={updatePostError}
                     />
                   ) : (
-                    <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6 h-full flex items-center justify-center">
+                    <div className="h-full flex items-center justify-center">
                       <p className="text-xs text-slate-500">
                         Select a campaign on the left to see more details.
                       </p>
@@ -1223,7 +1246,7 @@ function App() {
               </div>
 
               {selectedCampaign && (
-                <div className="lg:hidden">
+                <div className="lg:hidden rounded-3xl bg-white shadow-sm p-4 sm:p-6">
                   <CampaignDetailPanel
                     campaign={selectedCampaign}
                     onClose={handleCloseCampaignDetail}
@@ -1265,41 +1288,39 @@ function App() {
               </div>
 
               <div className="rounded-3xl bg-white shadow-sm p-4 sm:p-6 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50/60 px-3 py-3">
-                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">
-                      Uncontacted
-                    </p>
-                    <p className="mt-1 text-xl font-semibold text-slate-900">
-                      {uncontactedCount}
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Prospects you haven’t reached out to yet.
-                    </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-gradient-to-b from-[#ffe4d6]/70 via-cardBg to-cardBg shadow-card p-[1.5px]">
+                    <div className="rounded-[1rem] bg-cardBg border border-borderSoft px-4 py-3 flex flex-col gap-1.5">
+                      <p className="text-[11px] font-medium text-[#ff6a3c] uppercase tracking-wide">
+                        Uncontacted
+                      </p>
+                      <p className="text-2xl font-semibold text-slate-900">{uncontactedCount}</p>
+                      <p className="text-[11px] text-textMuted">
+                        Prospects you haven’t reached out to yet.
+                      </p>
+                    </div>
                   </div>
-
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-3 py-3">
-                    <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-[0.18em]">
-                      Qualified
-                    </p>
-                    <p className="mt-1 text-xl font-semibold text-emerald-900">
-                      {qualifiedCount}
-                    </p>
-                    <p className="mt-1 text-[11px] text-emerald-700">
-                      Prospects marked as a good fit.
-                    </p>
+                  <div className="rounded-2xl bg-gradient-to-b from-[#ffe4d6]/70 via-cardBg to-cardBg shadow-card p-[1.5px]">
+                    <div className="rounded-[1rem] bg-cardBg border border-borderSoft px-4 py-3 flex flex-col gap-1.5">
+                      <p className="text-[11px] font-medium text-[#49a682] uppercase tracking-wide">
+                        Qualified
+                      </p>
+                      <p className="text-2xl font-semibold text-slate-900">{qualifiedCount}</p>
+                      <p className="text-[11px] text-textMuted">
+                        Prospects marked as a good fit.
+                      </p>
+                    </div>
                   </div>
-
-                  <div className="rounded-2xl border border-amber-100 bg-amber-50/60 px-3 py-3">
-                    <p className="text-[11px] font-semibold text-amber-600 uppercase tracking-[0.18em]">
-                      In view
-                    </p>
-                    <p className="mt-1 text-xl font-semibold text-amber-900">
-                      {totalInView}
-                    </p>
-                    <p className="mt-1 text-[11px] text-amber-700">
-                      Prospects matching your current filters.
-                    </p>
+                  <div className="rounded-2xl bg-gradient-to-b from-[#ffe4d6]/70 via-cardBg to-cardBg shadow-card p-[1.5px]">
+                    <div className="rounded-[1rem] bg-cardBg border border-borderSoft px-4 py-3 flex flex-col gap-1.5">
+                      <p className="text-[11px] font-medium text-amber-700 uppercase tracking-wide">
+                        In view
+                      </p>
+                      <p className="text-2xl font-semibold text-slate-900">{totalInView}</p>
+                      <p className="text-[11px] text-textMuted">
+                        Prospects matching your current filters.
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -1354,7 +1375,7 @@ function App() {
                         className={
                           "rounded-full px-2 py-1 transition " +
                           (fitFilter === "all"
-                            ? "bg-slate-900 text-white"
+                            ? "bg-[#ff6a3c] text-white"
                             : "text-slate-600 hover:bg-slate-50")
                         }
                       >
@@ -1384,7 +1405,12 @@ function App() {
 
                   <button
                     type="button"
-                    className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                    className={
+                      "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium shadow-sm transition " +
+                      (showCsvImport
+                        ? "bg-[#ff6a3c] text-white"
+                        : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50")
+                    }
                     onClick={() => setShowCsvImport((prev) => !prev)}
                   >
                     {showCsvImport ? "Hide CSV import" : "Add prospects from CSV"}
@@ -1392,7 +1418,12 @@ function App() {
 
                   <button
                     type="button"
-                    className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                    className={
+                      "inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium shadow-sm transition " +
+                      (showManualProspectForm
+                        ? "bg-[#ff6a3c] text-white"
+                        : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50")
+                    }
                     onClick={() => setShowManualProspectForm((prev) => !prev)}
                   >
                     {showManualProspectForm ? "Hide manual form" : "Add prospect"}
@@ -1496,6 +1527,7 @@ function App() {
                     <div className="hidden lg:block">
                       <ProspectDetailPanel
                         prospect={selectedProspect}
+                        sourceName={selectedProspectSourceName}
                         enrichment={selectedEnrichment}
                         onClose={handleCloseDetail}
                         onChangeStatus={(newStatus) =>
@@ -1520,13 +1552,14 @@ function App() {
 
                 {selectedProspect && (
                   <div className="mt-4 lg:hidden">
-                    <ProspectDetailPanel
-                      prospect={selectedProspect}
-                      enrichment={selectedEnrichment}
-                      onClose={handleCloseDetail}
-                      onChangeStatus={(newStatus) =>
-                        handleProspectStatusChange(selectedProspect.id, newStatus)
-                      }
+                  <ProspectDetailPanel
+                    prospect={selectedProspect}
+                    sourceName={selectedProspectSourceName}
+                    enrichment={selectedEnrichment}
+                    onClose={handleCloseDetail}
+                    onChangeStatus={(newStatus) =>
+                      handleProspectStatusChange(selectedProspect.id, newStatus)
+                    }
                       updatingStatus={updatingStatus}
                       updateStatusError={updateStatusError}
                       notes={prospectNotes}
