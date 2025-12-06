@@ -14,6 +14,7 @@ import {
   addProspectNote,
   pushProspectToLeadDesk,
   createProspect,
+  createSource,
   updateSourceIcp,
 } from "./api";
 import ProspectManualForm from "./components/ProspectManualForm";
@@ -34,6 +35,37 @@ import type {
 import { CampaignDetailPanel } from "./components/CampaignDetailPanel";
 import { ProspectDetailPanel } from "./components/ProspectDetailPanel";
 
+function getSourceNameForProspect(
+  sources: Source[],
+  sourceId?: string | null,
+): string {
+  if (!sourceId) return "Unknown source";
+  const match = sources.find((s) => s.id === sourceId);
+  return match?.name || "Unknown source";
+}
+
+function escapeCsvValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function downloadCsv(filename: string, rows: string[][]): void {
+  const csvContent = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\r\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [prospects, setProspects] = useState<Prospect[]>([]);
@@ -47,18 +79,19 @@ function App() {
   const [savingSuggestionId, setSavingSuggestionId] = useState<string | null>(null);
   const [saveSuggestionError, setSaveSuggestionError] = useState<string | null>(null);
   const [updatingPostId, setUpdatingPostId] = useState<string | number | null>(null);
-  const [updatePostError, setUpdatePostError] = useState<string | null>(null);
   const [socialSuggestions, setSocialSuggestions] = useState<SocialPostSuggestion[]>([]);
+  const [lastSavedSuggestionMessage, setLastSavedSuggestionMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"dashboard" | "campaigns" | "prospects" | "settings">("dashboard");
   const [selectedSourceId, setSelectedSourceId] = useState<string | "all">("all");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [enrichment, setEnrichment] = useState<ProspectEnrichmentPreview[]>([]);
   const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
-  const [fitFilter, setFitFilter] = useState<"all" | "best">("all");
+  const [fitFilter, setFitFilter] = useState<"all" | "best" | "best-fit">("all");
   const [selectedProspectId, setSelectedProspectId] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [updateStatusError, setUpdateStatusError] = useState<string | null>(null);
@@ -88,6 +121,9 @@ function App() {
     string,
     { saving: boolean; error: string | null; success: boolean }
   >>({});
+  const [newSourceName, setNewSourceName] = useState("");
+  const [creatingSource, setCreatingSource] = useState(false);
+  const [createSourceError, setCreateSourceError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -155,6 +191,31 @@ function App() {
       return next;
     });
   }, [sources]);
+  useEffect(() => {
+    setLastSavedSuggestionMessage(null);
+  }, [selectedCampaignId]);
+
+  const handleSourceCreated = (source: Source) => {
+    setSources((prev) => [...prev, source]);
+  };
+
+  async function handleAddSource() {
+    const trimmed = newSourceName.trim();
+    if (!trimmed) return;
+    try {
+      setCreatingSource(true);
+      setCreateSourceError(null);
+      const newSource = await createSource({ name: trimmed });
+      handleSourceCreated(newSource);
+      setNewSourceName("");
+      setSelectedSourceId(newSource.id);
+    } catch (err) {
+      console.error("Failed to create source", err);
+      setCreateSourceError("Failed to create source. Please try again.");
+    } finally {
+      setCreatingSource(false);
+    }
+  }
   const primaryCampaign = campaigns[0];
   const primarySourceIcpSummary = buildSourceIcpSummary(primarySource || null);
   const postsForPrimaryCampaign = primaryCampaign
@@ -172,11 +233,17 @@ function App() {
       ? prospects
       : prospects.filter((p) => p.sourceId === selectedSourceId);
   const getSourceName = (sourceId: Prospect["sourceId"]) => {
-    if (!sourceId) return "Unknown source";
-    const match = sources.find((s) => s.id === sourceId);
-    return match?.name || "Unknown source";
+    return getSourceNameForProspect(sources, sourceId);
   };
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const isBestFitProspect = (prospect: Prospect): boolean => {
+    const enrichment = enrichmentByProspectId[prospect.id];
+    const label = enrichment?.fitLabel?.toLowerCase() || "";
+    if (label.includes("best")) return true;
+    if (label === "high" || label === "hot") return true;
+    if (typeof enrichment?.fitScore === "number" && enrichment.fitScore >= 80) return true;
+    return false;
+  };
   const statusAndSearchFilteredProspects = filteredProspects.filter((prospect) => {
     const matchesStatus =
       statusFilter === "all" ? true : prospect.status === statusFilter;
@@ -193,13 +260,12 @@ function App() {
       .join(" ")
       .toLowerCase();
 
-    return haystack.includes(normalizedSearch);
+  return haystack.includes(normalizedSearch);
   });
+  const wantsBestFit = fitFilter === "best" || fitFilter === "best-fit";
   const fitFilteredProspects = statusAndSearchFilteredProspects.filter((prospect) => {
-    if (fitFilter === "all") return true;
-    const enrichment = enrichmentByProspectId[prospect.id];
-    const label = enrichment?.fitLabel?.toLowerCase() || '';
-    return label === 'high' || label === 'hot';
+    if (!wantsBestFit) return true;
+    return isBestFitProspect(prospect);
   });
   const sortedProspects: Prospect[] = [...fitFilteredProspects].sort((a, b) => {
     const ea = enrichmentByProspectId[a.id];
@@ -297,6 +363,56 @@ function App() {
       setEnrichmentLoading(false);
     }
   }
+
+  const handleExportProspectsCsv = () => {
+    const list = sortedProspects;
+
+    if (!list || list.length === 0) {
+      alert("No prospects in the current view to export.");
+      return;
+    }
+
+    const header = [
+      "prospectId",
+      "companyName",
+      "contactName",
+      "email",
+      "phone",
+      "website",
+      "sourceName",
+      "status",
+      "fitLabel",
+      "fitScore",
+      "primaryPain",
+      "summary",
+    ];
+
+    const rows: string[][] = [header];
+
+    for (const p of list) {
+      const enrichment = enrichmentByProspectId[p.id];
+      const sourceName = getSourceNameForProspect(sources, p.sourceId);
+
+      rows.push([
+        p.id ?? "",
+        p.companyName ?? "",
+        p.contactName ?? "",
+        p.email ?? "",
+        p.phone ?? "",
+        p.website ?? "",
+        sourceName,
+        p.status ?? "",
+        enrichment?.fitLabel ?? "",
+        enrichment?.fitScore != null ? String(enrichment.fitScore) : "",
+        enrichment?.primaryPain ?? "",
+        enrichment?.summary ?? "",
+      ]);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const filename = `leadgen-prospects-${today}.csv`;
+    downloadCsv(filename, rows);
+  };
 
   const handleProspectStatusChange = async (
     prospectId: string,
@@ -465,6 +581,21 @@ function App() {
     setSelectedProspectId(null);
   };
 
+  const loadSocialPostsForCampaign = async (campaignId: string) => {
+    if (!campaignId) return;
+    try {
+      setSocialPostsLoading(true);
+      setSocialPostsError(null);
+      const posts = await fetchSocialPosts(campaignId);
+      setSocialPosts(posts);
+    } catch (err) {
+      console.error("Failed to load social posts", err);
+      setSocialPostsError("Could not load social posts.");
+    } finally {
+      setSocialPostsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!selectedCampaignId) {
       setSocialPosts([]);
@@ -478,37 +609,14 @@ function App() {
       return;
     }
 
-    let cancelled = false;
-    setSocialPostsLoading(true);
-    setSocialPostsError(null);
-
-    fetchSocialPosts(selectedCampaignId)
-      .then((posts) => {
-        if (!cancelled) {
-          setSocialPosts(posts);
-        }
-      })
-      .catch((err) => {
-        console.error("Failed to load social posts", err);
-        if (!cancelled) {
-          setSocialPostsError("Could not load social posts.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setSocialPostsLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    loadSocialPostsForCampaign(selectedCampaignId);
   }, [selectedCampaignId]);
 
   const handleGeneratePostSuggestions = async (campaignId: string) => {
     try {
       setPostSuggestionsLoading(true);
       setPostSuggestionsError(null);
+      setLastSavedSuggestionMessage(null);
       setPostSuggestions([]);
 
       const suggestions = await fetchCampaignPostSuggestions(campaignId);
@@ -527,18 +635,15 @@ function App() {
   ) => {
     try {
       setUpdatingPostId(postId);
-      setUpdatePostError(null);
 
-      const updated = await updateSocialPostStatus(postId, newStatus);
+      await updateSocialPostStatus(postId, newStatus);
 
-      setSocialPosts((prev) =>
-        prev.map((post) =>
-          post.id === updated.id ? { ...post, status: updated.status } : post,
-        ),
-      );
+      const campaignIdToReload = selectedCampaignId || selectedCampaign?.id;
+      if (campaignIdToReload) {
+        await loadSocialPostsForCampaign(campaignIdToReload);
+      }
     } catch (err) {
       console.error("Failed to update social post status", err);
-      setUpdatePostError("Could not update post status. Please try again.");
     } finally {
       setUpdatingPostId(null);
     }
@@ -576,6 +681,13 @@ function App() {
       });
 
       setSocialPosts((prev) => [post, ...prev]);
+      setPostSuggestions((prev) =>
+        (prev || []).filter((s, index) => {
+          const key = s?.id ?? s?.channel ?? s?.content ?? `suggestion-${index}`;
+          return key !== suggestionKey;
+        }),
+      );
+      setLastSavedSuggestionMessage('Saved as draft in Social posts ↑');
     } catch (err) {
       console.error("Failed to save suggestion as post", err);
       setSaveSuggestionError("Could not save this suggestion as a post.");
@@ -869,7 +981,7 @@ function App() {
                           )}
                           {primaryCampaign.targetDescription && (
                             <p className="text-xs text-textMuted leading-relaxed">
-                              Target: {primaryCampaign.targetDescription}
+                              Target: SME service businesses that want hosted AI systems to streamline their work.
                             </p>
                           )}
                         </div>
@@ -887,7 +999,7 @@ function App() {
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
                       <div>
                         <h2 className="text-sm font-semibold text-[#49a682]">Social posts</h2>
-                        {primaryCampaign && (
+                        {primaryCampaign && isExpanded && (
                           <p className="text-xs text-slate-500">
                             For campaign: <span className="font-medium text-slate-900">{primaryCampaign.name}</span>
                           </p>
@@ -910,84 +1022,111 @@ function App() {
                       )}
                     </div>
 
-                    {loading && (
-                      <p className="text-xs text-slate-500">Loading social posts…</p>
+                    {!isExpanded && (
+                      <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                        <p className="text-[11px]">Social posts preview is hidden.</p>
+                        <button
+                          type="button"
+                          onClick={() => setIsExpanded(true)}
+                          className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                        >
+                          Show posts
+                        </button>
+                      </div>
                     )}
 
-                    {error && (
-                      <p className="text-xs text-red-500">{error}</p>
-                    )}
+                    {isExpanded && (
+                      <>
+                        {loading && (
+                          <p className="text-xs text-slate-500">Loading social posts…</p>
+                        )}
 
-                    {suggestionsLoading && (
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Generating suggestions…
-                      </p>
-                    )}
+                        {error && (
+                          <p className="text-xs text-red-500">{error}</p>
+                        )}
 
-                    {!loading && !error && primaryCampaign && postsForPrimaryCampaign.length > 0 && (
-                      <ul className="mt-2 space-y-2 text-xs">
-                        {postsForPrimaryCampaign.slice(0, 3).map((post) => (
-                          <li
-                            key={post.id}
-                            className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 hover:border-[#ffe4d6] hover:bg-[#ffe4d6]/50 transition"
-                          >
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-medium capitalize">
-                                {post.channel || "linkedin"}
-                              </span>
-                              <span className="inline-flex items-center rounded-full bg-[#ffe4d6] px-2 py-0.5 text-[10px] font-medium text-[#ff6a3c]">
-                                {post.status || "draft"}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 line-clamp-3">
-                              {post.content}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {!loading &&
-                      !error &&
-                      primaryCampaign &&
-                      socialSuggestions.length > 0 && (
-                        <div className="mt-3 border-t border-slate-100 pt-2">
-                          <p className="mb-2 text-[11px] font-medium text-slate-400 uppercase tracking-wide">
-                            AI suggestions (not yet scheduled)
+                        {suggestionsLoading && (
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            Generating suggestions…
                           </p>
-                          <ul className="space-y-2 text-xs">
-                            {socialSuggestions.map((s) => (
+                        )}
+
+                        {!loading && !error && primaryCampaign && postsForPrimaryCampaign.length > 0 && (
+                          <ul className="mt-2 space-y-2 text-xs">
+                            {postsForPrimaryCampaign.slice(0, 3).map((post) => (
                               <li
-                                key={s.id}
-                                className="rounded-lg border border-dashed border-[#ffe4d6] bg-white px-3 py-2 hover:border-[#ff6a3c] transition"
+                                key={post.id}
+                                className="rounded-lg border border-slate-100 bg-slate-50/70 px-3 py-2 hover:border-[#ffe4d6] hover:bg-[#ffe4d6]/50 transition"
                               >
                                 <div className="flex items-center justify-between mb-1">
-                                  <span className="capitalize">
-                                    {s.channel || "linkedin"}
+                                  <span className="font-medium capitalize">
+                                    {post.channel || "linkedin"}
                                   </span>
                                   <span className="inline-flex items-center rounded-full bg-[#ffe4d6] px-2 py-0.5 text-[10px] font-medium text-[#ff6a3c]">
-                                    suggestion
+                                    {post.status || "draft"}
                                   </span>
                                 </div>
-                                <p className="text-[11px] text-slate-500 whitespace-pre-line">
-                                  {s.content}
+                                <p className="text-[11px] text-slate-500 line-clamp-3">
+                                  {post.content}
                                 </p>
                               </li>
                             ))}
                           </ul>
-                        </div>
-                      )}
+                        )}
+
+                        {!loading &&
+                          !error &&
+                          primaryCampaign &&
+                          socialSuggestions.length > 0 && (
+                            <div className="mt-3 border-t border-slate-100 pt-2">
+                              <p className="mb-2 text-[11px] font-medium text-slate-400 uppercase tracking-wide">
+                                AI suggestions (not yet scheduled)
+                              </p>
+                              <ul className="space-y-2 text-xs">
+                                {socialSuggestions.map((s) => (
+                                  <li
+                                    key={s.id}
+                                    className="rounded-lg border border-dashed border-[#ffe4d6] bg-white px-3 py-2 hover:border-[#ff6a3c] transition"
+                                  >
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="capitalize">
+                                        {s.channel || "linkedin"}
+                                      </span>
+                                      <span className="inline-flex items-center rounded-full bg-[#ffe4d6] px-2 py-0.5 text-[10px] font-medium text-[#ff6a3c]">
+                                        suggestion
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 whitespace-pre-line">
+                                      {s.content}
+                                    </p>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
 
                     {!loading && !error && primaryCampaign && postsForPrimaryCampaign.length === 0 && (
                       <p className="mt-1 text-xs text-slate-500">
-                        No posts yet for this campaign. Soon we’ll let AI draft and schedule posts from here.
+                        Click "Generate AI suggestions" to draft social posts for this campaign, then fine-tune them on the Campaigns tab.
                       </p>
                     )}
 
-                    {!loading && !error && !primaryCampaign && (
-                      <p className="mt-1 text-xs text-slate-500">
-                        Create a campaign to start planning social posts.
-                      </p>
+                        {!loading && !error && !primaryCampaign && (
+                          <p className="mt-1 text-xs text-slate-500">
+                            Create a campaign to start planning social posts.
+                          </p>
+                        )}
+
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => setIsExpanded(false)}
+                            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-slate-50 transition"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </>
                     )}
                   </section>
 
@@ -1123,14 +1262,14 @@ function App() {
                 </div>
 
                 <section className="rounded-2xl bg-white shadow-sm border border-slate-100 px-4 py-4 md:px-5 md:py-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h2 className="text-sm font-semibold tracking-tight text-[#49a682]">Prospects</h2>
-                      <p className="text-sm text-slate-500 mt-1">
-                        Prospects for the selected source will appear here once data is connected.
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-sm font-semibold tracking-tight text-[#49a682]">Prospects</h2>
+                        <p className="text-sm text-slate-500 mt-1">
+                        Prospects for this source will appear here after you import a CSV or add them manually.
                       </p>
+                      </div>
                     </div>
-                  </div>
 
                   {loading && (
                     <p className="mt-3 text-sm text-slate-500">Loading prospects…</p>
@@ -1339,7 +1478,8 @@ function App() {
                       saveSuggestionError={saveSuggestionError}
                       onUpdatePostStatus={handleUpdatePostStatus}
                       updatingPostId={updatingPostId}
-                      updatePostError={updatePostError}
+                      lastSaveMessage={lastSavedSuggestionMessage}
+                      allSocialPosts={socialPosts}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center">
@@ -1370,7 +1510,8 @@ function App() {
                     saveSuggestionError={saveSuggestionError}
                     onUpdatePostStatus={handleUpdatePostStatus}
                     updatingPostId={updatingPostId}
-                    updatePostError={updatePostError}
+                    lastSaveMessage={lastSavedSuggestionMessage}
+                    allSocialPosts={socialPosts}
                   />
                 </div>
               )}
@@ -1533,6 +1674,14 @@ function App() {
                     onClick={() => setShowManualProspectForm((prev) => !prev)}
                   >
                     {showManualProspectForm ? "Hide manual form" : "Add prospect"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportProspectsCsv}
+                    className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    Export this view as CSV
                   </button>
                 </div>
 
@@ -1703,6 +1852,35 @@ function App() {
                 <p className="text-sm text-slate-600">
                   Internal-only: add context per source to guide enrichment (industry, size, role focus, and angle).
                 </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-slate-700">New source name</label>
+                  <input
+                    type="text"
+                    value={newSourceName}
+                    onChange={(e) => setNewSourceName(e.target.value)}
+                    placeholder="e.g. Eco installers – November"
+                    className="mt-1 block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  {createSourceError && (
+                    <p className="mt-1 text-xs text-red-600">{createSourceError}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddSource}
+                  disabled={creatingSource}
+                  className={
+                    "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition " +
+                    (creatingSource
+                      ? "bg-neutral-200 text-neutral-500 cursor-wait"
+                      : "bg-[#ff6a3c] text-white hover:bg-[#ff5a28]")
+                  }
+                >
+                  {creatingSource ? "Adding..." : "Add"}
+                </button>
               </div>
 
               {sources.length === 0 ? (

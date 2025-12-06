@@ -119,6 +119,22 @@ export async function fetchSources(): Promise<Source[]> {
   return res.json();
 }
 
+export async function createSource(input: { name: string }): Promise<Source> {
+  const res = await fetch(`${BASE_URL}/sources`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name: input.name }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to create source (${res.status})`);
+  }
+
+  return res.json();
+}
+
 export async function updateSourceIcp(
   id: string,
   payload: {

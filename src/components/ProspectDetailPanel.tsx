@@ -135,7 +135,7 @@ export function ProspectDetailPanel({
           {prospect.phone && (
             <p className="text-xs text-slate-500">{prospect.phone}</p>
           )}
-          <p className="text-xs text-slate-500">
+<p className="text-sm text-emerald-700 mt-1">
             Source: {sourceName ?? "Unknown source"}
           </p>
         </div>
@@ -187,7 +187,12 @@ export function ProspectDetailPanel({
         )}
         {lastPushedLeadDeskId && !pushToLeadDeskError && (
           <p className="text-xs text-emerald-600">
-            Sent to Lead Desk (id: {lastPushedLeadDeskId}).
+                  {(() => {
+                    const company = prospect?.companyName?.trim();
+                    const contact = prospect?.contactName?.trim();
+                    const leadDeskLabel = company && contact ? `${company} – ${contact}` : company || contact;
+                    return leadDeskLabel ? `Sent to Lead Desk as "${leadDeskLabel}".` : "Sent to Lead Desk.";
+                  })()}
           </p>
         )}
       </div>

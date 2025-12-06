@@ -33,7 +33,8 @@ interface CampaignDetailPanelProps {
   saveSuggestionError?: string | null;
   onUpdatePostStatus?: (postId: string | number, status: SocialPostStatus) => void;
   updatingPostId?: string | number | null;
-  updatePostError?: string | null;
+  lastSaveMessage?: string | null;
+  allSocialPosts?: SocialPost[];
 }
 
 export function CampaignDetailPanel({
@@ -51,12 +52,34 @@ export function CampaignDetailPanel({
   saveSuggestionError,
   onUpdatePostStatus,
   updatingPostId,
-  updatePostError,
+  lastSaveMessage,
+  allSocialPosts,
 }: CampaignDetailPanelProps) {
   const [copiedPostId, setCopiedPostId] = useState<string | number | null>(null);
   const [aiSuggestionsCollapsed, setAiSuggestionsCollapsed] = useState(false);
   const [postChannelFilter, setPostChannelFilter] = useState<"all" | "linkedin" | "twitter" | "facebook" | "instagram">("all");
   const [postStatusFilter, setPostStatusFilter] = useState<"all" | "draft" | "sent">("all");
+  const postsForSummary = allSocialPosts ?? socialPosts ?? [];
+  const draftCount = postsForSummary.filter(
+    (post) => (post.status || "").toLowerCase() === "draft",
+  ).length;
+  const sentPosts = postsForSummary.filter(
+    (post) => (post.status || "").toLowerCase() === "sent",
+  );
+  const archivedCount = postsForSummary.filter(
+    (post) => (post.status || "").toLowerCase() === "archived",
+  ).length;
+  const sentTimestamps = sentPosts
+    .map((post) => {
+      const raw = (post as any).sentAt || post.createdAt;
+      const time = raw ? new Date(raw).getTime() : NaN;
+      return Number.isNaN(time) ? null : time;
+    })
+    .filter((time): time is number => time != null);
+  const lastSentLabel =
+    sentTimestamps.length > 0
+      ? new Date(Math.max(...sentTimestamps)).toLocaleDateString()
+      : "never";
   const filteredSocialPosts =
     socialPosts?.filter((post) => {
       if (!post) return false;
@@ -78,6 +101,14 @@ export function CampaignDetailPanel({
 
       return true;
     }) || [];
+  const displayedSocialPosts =
+    postStatusFilter === "sent"
+      ? [...filteredSocialPosts].sort((a, b) => {
+          const aTime = a.sentAt ? Date.parse(a.sentAt) : 0;
+          const bTime = b.sentAt ? Date.parse(b.sentAt) : 0;
+          return bTime - aTime;
+        })
+      : filteredSocialPosts;
   const name = campaign.name || campaign.title || "Untitled campaign";
   const status = (campaign.status || campaign.state || "").toLowerCase();
   const createdAt = campaign.createdAt || campaign.startDate;
@@ -243,6 +274,10 @@ export function CampaignDetailPanel({
           </div>
         </div>
 
+        <p className="text-xs text-slate-600 mb-2">
+          {draftCount} drafts · {sentPosts.length} sent · {archivedCount} archived · last sent: {lastSentLabel}
+        </p>
+
         {socialPostsLoading && (
           <p className="text-xs text-slate-500 mb-2">Loading posts...</p>
         )}
@@ -267,12 +302,15 @@ export function CampaignDetailPanel({
             </p>
           )}
 
-        {filteredSocialPosts.length > 0 && (
+        {displayedSocialPosts.length > 0 && (
           <div className="space-y-2">
-            {filteredSocialPosts.map((post) => {
+            {displayedSocialPosts.map((post) => {
               const isUpdating = updatingPostId != null && updatingPostId === post.id;
               const isSent = post.status === "sent";
               const isArchived = post.status === "archived";
+              const sentDateLabel = post.sentAt
+                ? new Date(post.sentAt).toLocaleDateString()
+                : null;
 
               return (
                 <div
@@ -283,18 +321,25 @@ export function CampaignDetailPanel({
                     <span className="text-[11px] font-medium text-slate-700">
                       {post.channel || "Post"}
                     </span>
-                    {post.status && (
-                      <span
-                        className={
-                          "inline-flex items-center rounded-full px-2 py-[2px] text-[11px] font-medium " +
-                          (post.status === "sent"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-600")
-                        }
-                      >
-                        {post.status}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {post.status && (
+                        <span
+                          className={
+                            "inline-flex items-center rounded-full px-2 py-[2px] text-[11px] font-medium " +
+                            (post.status === "sent"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-600")
+                          }
+                        >
+                          {post.status}
+                        </span>
+                      )}
+                      {post.status === "sent" && (
+                        <span className="text-[11px] text-slate-500">
+                          {sentDateLabel ? `sent · ${sentDateLabel}` : "sent"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {post.createdAt && (
                     <p className="text-[11px] text-slate-500 mb-1">
@@ -306,11 +351,6 @@ export function CampaignDetailPanel({
                   </p>
 
                   <div className="flex items-center justify-between gap-2">
-                    {updatePostError && (
-                      <span className="text-[11px] text-red-500">
-                        {updatePostError}
-                      </span>
-                    )}
                     <div className="ml-auto flex items-center gap-2">
                       {copiedPostId === post.id && (
                         <span className="text-[11px] text-emerald-600">Copied</span>
@@ -370,6 +410,14 @@ export function CampaignDetailPanel({
             </button>
           )}
         </div>
+        <p className="text-[11px] text-slate-500 mb-1">
+          Save the posts you like into the Social posts list above.
+        </p>
+        {lastSaveMessage && (
+          <p className="text-[11px] text-emerald-600 mb-1">
+            {lastSaveMessage}
+          </p>
+        )}
 
         {postSuggestionsError && (
           <p className="text-xs text-red-500 mb-2">{postSuggestionsError}</p>
@@ -377,7 +425,8 @@ export function CampaignDetailPanel({
 
         {!postSuggestionsLoading &&
           !postSuggestionsError &&
-          (!postSuggestions || postSuggestions.length === 0) && (
+          ((postSuggestions?.length ?? 0) === 0) &&
+          ((socialPosts?.length ?? 0) === 0) && (
             <p className="text-xs text-slate-500">
               No AI suggestions yet. Click "Generate suggestions" to draft posts based on this campaign.
             </p>
