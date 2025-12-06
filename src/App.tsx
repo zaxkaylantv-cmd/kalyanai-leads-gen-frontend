@@ -239,9 +239,18 @@ function App() {
   const isBestFitProspect = (prospect: Prospect): boolean => {
     const enrichment = enrichmentByProspectId[prospect.id];
     const label = enrichment?.fitLabel?.toLowerCase() || "";
-    if (label.includes("best")) return true;
-    if (label === "high" || label === "hot") return true;
-    if (typeof enrichment?.fitScore === "number" && enrichment.fitScore >= 80) return true;
+    const score = typeof enrichment?.fitScore === "number" ? enrichment.fitScore : null;
+
+    if (label) {
+      if (label.includes("warm") || label.includes("hot") || label.includes("best") || label === "high") {
+        return true;
+      }
+    }
+
+    if (score !== null) {
+      return score >= 50;
+    }
+
     return false;
   };
   const statusAndSearchFilteredProspects = filteredProspects.filter((prospect) => {
