@@ -26,6 +26,7 @@ export interface Prospect {
   createdAt: string;
   updatedAt: string | null;
   lastContactedAt: string | null;
+  archivedAt: string | null;
 }
 
 export interface Campaign {
@@ -167,6 +168,14 @@ export async function fetchProspects(): Promise<Prospect[]> {
   return res.json();
 }
 
+export async function fetchArchivedProspects(): Promise<Prospect[]> {
+  const res = await fetch(`${BASE_URL}/prospects?archived=1`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch archived prospects (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function fetchCampaigns(): Promise<Campaign[]> {
   const res = await fetch(`${BASE_URL}/campaigns`);
   if (!res.ok) {
@@ -304,6 +313,50 @@ export async function updateProspectStatus(
   }
 
   return response.json();
+}
+
+export async function archiveProspect(prospectId: string): Promise<Prospect> {
+  const res = await fetch(`${BASE_URL}/prospects/${prospectId}/archive`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to archive prospect (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function restoreProspect(prospectId: string): Promise<Prospect> {
+  const res = await fetch(`${BASE_URL}/prospects/${prospectId}/restore`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to restore prospect (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function deleteProspect(
+  prospectId: string,
+): Promise<{ success: boolean; deletedId: string }> {
+  const res = await fetch(`${BASE_URL}/prospects/${prospectId}`, {
+    method: 'DELETE',
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to delete prospect (${res.status})`);
+  }
+
+  return res.json();
 }
 
 export async function fetchProspectNotes(prospectId: string): Promise<ProspectNote[]> {
