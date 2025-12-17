@@ -65,6 +65,9 @@ interface ProspectDetailPanelProps {
   pushToLeadDeskError?: string | null;
   lastPushedLeadDeskId?: string | null;
   onArchive: () => void;
+  onRestore?: () => void;
+  onDelete?: () => void;
+  mode?: "active" | "archived";
 }
 
 export function ProspectDetailPanel({
@@ -85,8 +88,12 @@ export function ProspectDetailPanel({
   pushingToLeadDesk,
   pushToLeadDeskError,
   lastPushedLeadDeskId,
+  onRestore,
+  onDelete,
+  mode = "active",
   onArchive,
 }: ProspectDetailPanelProps) {
+  const isArchived = mode === "archived";
   const [noteDraft, setNoteDraft] = useState("");
   const status = prospect.status || "unknown";
   let statusClasses =
@@ -177,13 +184,33 @@ export function ProspectDetailPanel({
           >
             {pushingToLeadDesk ? "Sending…" : "Send to Lead Desk"}
           </button>
-          <button
-            type="button"
-            onClick={onArchive}
-            className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-          >
-            Archive
-          </button>
+          {!isArchived && (
+            <button
+              type="button"
+              onClick={onArchive}
+              className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Archive
+            </button>
+          )}
+          {isArchived && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onRestore}
+                className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Restore
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Delete
+              </button>
+            </div>
+          )}
         </div>
         {updatingStatus && (
           <p className="text-xs text-slate-500">Updating status…</p>

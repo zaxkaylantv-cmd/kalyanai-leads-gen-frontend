@@ -10,6 +10,9 @@ import {
   createSocialPost,
   updateSocialPostStatus,
   updateProspectStatus,
+  fetchArchivedProspects,
+  restoreProspect,
+  deleteProspect,
   archiveProspect,
   fetchProspectNotes,
   addProspectNote,
@@ -107,6 +110,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<"all" | "uncontacted" | "contacted" | "qualified" | "bad-fit">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [prospectsReloadToken, setProspectsReloadToken] = useState(0);
+  const [prospectView, setProspectView] = useState<"active" | "archived">("active");
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showManualProspectForm, setShowManualProspectForm] = useState(false);
   const [editedSources, setEditedSources] = useState<Record<
@@ -136,7 +140,7 @@ function App() {
 
         const [sourcesData, prospectsData, campaignsData] = await Promise.all([
           fetchSources(),
-          fetchProspects(),
+          prospectView === "archived" ? fetchArchivedProspects() : fetchProspects(),
           fetchCampaigns(),
         ]);
 
@@ -162,7 +166,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [prospectsReloadToken]);
+  }, [prospectsReloadToken, prospectView]);
 
   function buildSourceIcpSummary(source?: Source | null): string | null {
     if (!source) return null;
@@ -600,6 +604,32 @@ function App() {
     } catch (err) {
       console.error("Failed to archive prospect", err);
       setError("Could not archive prospect. Please try again.");
+    }
+  };
+
+  const handleRestoreSelectedProspect = async () => {
+    if (!selectedProspectId) return;
+    try {
+      await restoreProspect(selectedProspectId);
+      setProspectsReloadToken((prev) => prev + 1);
+      setSelectedProspectId(null);
+    } catch (err) {
+      console.error("Failed to restore prospect", err);
+      setError("Could not restore prospect. Please try again.");
+    }
+  };
+
+  const handleDeleteSelectedProspect = async () => {
+    if (!selectedProspectId || prospectView !== "archived") return;
+    const confirmed = window.confirm("Delete this archived prospect permanently?");
+    if (!confirmed) return;
+    try {
+      await deleteProspect(selectedProspectId);
+      setProspectsReloadToken((prev) => prev + 1);
+      setSelectedProspectId(null);
+    } catch (err) {
+      console.error("Failed to delete prospect", err);
+      setError("Could not delete prospect. Please try again.");
     }
   };
 
@@ -1608,6 +1638,40 @@ function App() {
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                   <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 text-xs font-medium text-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProspectView("active");
+                          setSelectedProspectId(null);
+                          setProspectsReloadToken((prev) => prev + 1);
+                        }}
+                        className={
+                          "rounded-full px-2 py-1 transition " +
+                          (prospectView === "active"
+                            ? "bg-[#ff6a3c] text-white"
+                            : "text-slate-600 hover:bg-slate-50")
+                        }
+                      >
+                        Active
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProspectView("archived");
+                          setSelectedProspectId(null);
+                          setProspectsReloadToken((prev) => prev + 1);
+                        }}
+                        className={
+                          "rounded-full px-2 py-1 transition " +
+                          (prospectView === "archived"
+                            ? "bg-[#ff6a3c] text-white"
+                            : "text-slate-600 hover:bg-slate-50")
+                        }
+                      >
+                        Archived
+                      </button>
+                    </div>
                     <select
                       className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
                       value={selectedSourceId}
@@ -1829,6 +1893,9 @@ function App() {
                         pushToLeadDeskError={pushToLeadDeskError}
                         lastPushedLeadDeskId={lastPushedLeadDeskId}
                         onArchive={handleArchiveSelectedProspect}
+                        onRestore={handleRestoreSelectedProspect}
+                        onDelete={handleDeleteSelectedProspect}
+                        mode={prospectView}
                       />
                     </div>
                   </div>
@@ -1857,6 +1924,9 @@ function App() {
                     pushToLeadDeskError={pushToLeadDeskError}
                     lastPushedLeadDeskId={lastPushedLeadDeskId}
                     onArchive={handleArchiveSelectedProspect}
+                    onRestore={handleRestoreSelectedProspect}
+                    onDelete={handleDeleteSelectedProspect}
+                    mode={prospectView}
                   />
                   </div>
                 )}
