@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Papa, { type ParseResult } from "papaparse";
-import type { BulkProspectInput, Source } from "../api";
-import { bulkImportProspects } from "../api";
+import type { BulkProspectInput, Source, ImportReport } from "../api";
+import { bulkImportProspectsWithReport } from "../api";
 
 function normalizeHeader(name: unknown): string {
   if (typeof name !== "string") return "";
@@ -36,6 +36,7 @@ function ProspectsCsvImport({ sourceId, sources, onImported }: ProspectsCsvImpor
   const [parsedProspects, setParsedProspects] = useState<BulkProspectInput[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [targetSourceId, setTargetSourceId] = useState<string | null>(
     sourceId && sourceId !== "all" ? sourceId : null,
@@ -52,6 +53,7 @@ function ProspectsCsvImport({ sourceId, sources, onImported }: ProspectsCsvImpor
     if (!file) return;
 
     setError(null);
+    setImportReport(null);
     setFileName(file.name);
     setRowCount(null);
     setPreviewRows([]);
@@ -178,7 +180,12 @@ function ProspectsCsvImport({ sourceId, sources, onImported }: ProspectsCsvImpor
     try {
       setImporting(true);
       setError(null);
-      await bulkImportProspects(targetSourceId, parsedProspects);
+      setImportReport(null);
+      const { report } = await bulkImportProspectsWithReport(
+        targetSourceId,
+        parsedProspects,
+      );
+      setImportReport(report);
       onImported();
     } catch (err) {
       console.error("Bulk import failed", err);
@@ -280,6 +287,38 @@ function ProspectsCsvImport({ sourceId, sources, onImported }: ProspectsCsvImpor
         </p>
       )}
 
+      {importReport && !error && (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+              Import report
+            </p>
+            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-[2px] text-[10px] font-medium text-amber-700">
+              {buildVendorHint(importReport)}
+            </span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-700">
+            <ReportStat label="Received" value={importReport.received} />
+            <ReportStat label="Valid" value={importReport.valid} />
+            <ReportStat label="Inserted" value={importReport.inserted} />
+            <ReportStat label="Skipped · Invalid" value={importReport.skippedInvalid} />
+            <ReportStat
+              label="Skipped · Duplicate email"
+              value={importReport.skippedDuplicateEmail}
+            />
+            <ReportStat
+              label="Skipped · Duplicate fallback"
+              value={importReport.skippedDuplicateFallback}
+            />
+            <ReportStat
+              label="Skipped · Suppressed"
+              value={importReport.skippedSuppressed}
+            />
+            <ReportStat label="Skipped · Other" value={importReport.skippedOther} />
+          </div>
+        </div>
+      )}
+
       <div className="mt-3 flex justify-end">
         <button
           type="button"
@@ -295,3 +334,27 @@ function ProspectsCsvImport({ sourceId, sources, onImported }: ProspectsCsvImpor
 }
 
 export default ProspectsCsvImport;
+
+function ReportStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2">
+      <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="text-sm font-semibold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function buildVendorHint(report: ImportReport): string {
+  const duplicateTotal =
+    report.skippedDuplicateEmail + report.skippedDuplicateFallback + report.skippedSuppressed;
+  if (report.received === 0) return "No rows received";
+
+  const duplicateRatio = duplicateTotal / Math.max(report.received, 1);
+  if (duplicateRatio >= 0.3) {
+    return "High duplicates — vendor list may be recycled";
+  }
+  if (report.skippedInvalid > report.inserted) {
+    return "Many invalid rows — data quality issue";
+  }
+  return "Looks clean — low duplicate rate";
+}

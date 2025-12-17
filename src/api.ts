@@ -27,6 +27,7 @@ export interface Prospect {
   updatedAt: string | null;
   lastContactedAt: string | null;
   archivedAt: string | null;
+  suppressedAt?: string | null;
 }
 
 export interface Campaign {
@@ -108,6 +109,17 @@ export interface CreateProspectInput {
   status?: string;
 }
 
+export interface ImportReport {
+  received: number;
+  valid: number;
+  inserted: number;
+  skippedInvalid: number;
+  skippedDuplicateEmail: number;
+  skippedDuplicateFallback: number;
+  skippedSuppressed: number;
+  skippedOther: number;
+}
+
 const BASE_URL = "/leads-gen-api";
 
 // NOTE: There is intentionally no trailing slash.
@@ -172,6 +184,14 @@ export async function fetchArchivedProspects(): Promise<Prospect[]> {
   const res = await fetch(`${BASE_URL}/prospects?archived=1`);
   if (!res.ok) {
     throw new Error(`Failed to fetch archived prospects (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchSuppressedProspects(): Promise<Prospect[]> {
+  const res = await fetch(`${BASE_URL}/prospects?suppressed=1`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch suppressed prospects (${res.status})`);
   }
   return res.json();
 }
@@ -408,6 +428,13 @@ export async function bulkImportProspects(
   sourceId: string,
   prospects: BulkProspectInput[],
 ): Promise<void> {
+  await bulkImportProspectsWithReport(sourceId, prospects);
+}
+
+export async function bulkImportProspectsWithReport(
+  sourceId: string,
+  prospects: BulkProspectInput[],
+): Promise<{ inserted: Prospect[]; report: ImportReport }> {
   const res = await fetch(
     `/leads-gen-api/sources/${encodeURIComponent(sourceId)}/prospects/bulk`,
     {
@@ -422,6 +449,31 @@ export async function bulkImportProspects(
   if (!res.ok) {
     throw new Error(`Bulk import failed (${res.status})`);
   }
+
+  const toNumber = (value: string | null): number => {
+    const parsed = Number(value ?? "0");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const report: ImportReport = {
+    received: toNumber(res.headers.get("X-LeadGen-Import-Received")),
+    valid: toNumber(res.headers.get("X-LeadGen-Import-Valid")),
+    inserted: toNumber(res.headers.get("X-LeadGen-Import-Inserted")),
+    skippedInvalid: toNumber(res.headers.get("X-LeadGen-Import-Skipped-Invalid")),
+    skippedDuplicateEmail: toNumber(
+      res.headers.get("X-LeadGen-Import-Skipped-Duplicate-Email"),
+    ),
+    skippedDuplicateFallback: toNumber(
+      res.headers.get("X-LeadGen-Import-Skipped-Duplicate-Fallback"),
+    ),
+    skippedSuppressed: toNumber(
+      res.headers.get("X-LeadGen-Import-Skipped-Suppressed"),
+    ),
+    skippedOther: toNumber(res.headers.get("X-LeadGen-Import-Skipped-Other")),
+  };
+
+  const inserted = await res.json();
+  return { inserted, report };
 }
 
 export async function createProspect(

@@ -67,7 +67,7 @@ interface ProspectDetailPanelProps {
   onArchive: () => void;
   onRestore?: () => void;
   onDelete?: () => void;
-  mode?: "active" | "archived";
+  mode?: "active" | "archived" | "suppressed";
 }
 
 export function ProspectDetailPanel({

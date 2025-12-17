@@ -20,6 +20,7 @@ import {
   createProspect,
   createSource,
   updateSourceIcp,
+  fetchSuppressedProspects,
 } from "./api";
 import ProspectManualForm from "./components/ProspectManualForm";
 import ProspectsCsvImport from "./components/ProspectsCsvImport";
@@ -110,7 +111,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<"all" | "uncontacted" | "contacted" | "qualified" | "bad-fit">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [prospectsReloadToken, setProspectsReloadToken] = useState(0);
-  const [prospectView, setProspectView] = useState<"active" | "archived">("active");
+  const [prospectView, setProspectView] = useState<"active" | "archived" | "suppressed">("active");
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showManualProspectForm, setShowManualProspectForm] = useState(false);
   const [editedSources, setEditedSources] = useState<Record<
@@ -140,7 +141,11 @@ function App() {
 
         const [sourcesData, prospectsData, campaignsData] = await Promise.all([
           fetchSources(),
-          prospectView === "archived" ? fetchArchivedProspects() : fetchProspects(),
+          prospectView === "archived"
+            ? fetchArchivedProspects()
+            : prospectView === "suppressed"
+              ? fetchSuppressedProspects()
+              : fetchProspects(),
           fetchCampaigns(),
         ]);
 
@@ -1670,6 +1675,22 @@ function App() {
                         }
                       >
                         Archived
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProspectView("suppressed");
+                          setSelectedProspectId(null);
+                          setProspectsReloadToken((prev) => prev + 1);
+                        }}
+                        className={
+                          "rounded-full px-2 py-1 transition " +
+                          (prospectView === "suppressed"
+                            ? "bg-[#ff6a3c] text-white"
+                            : "text-slate-600 hover:bg-slate-50")
+                        }
+                      >
+                        Suppressed
                       </button>
                     </div>
                     <select
