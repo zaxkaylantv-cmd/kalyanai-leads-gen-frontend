@@ -10,6 +10,7 @@ import {
   createSocialPost,
   updateSocialPostStatus,
   updateProspectStatus,
+  archiveProspect,
   fetchProspectNotes,
   addProspectNote,
   pushProspectToLeadDesk,
@@ -588,6 +589,18 @@ function App() {
 
   const handleCloseDetail = () => {
     setSelectedProspectId(null);
+  };
+
+  const handleArchiveSelectedProspect = async () => {
+    if (!selectedProspectId) return;
+    try {
+      await archiveProspect(selectedProspectId);
+      setProspectsReloadToken((prev) => prev + 1);
+      setSelectedProspectId(null);
+    } catch (err) {
+      console.error("Failed to archive prospect", err);
+      setError("Could not archive prospect. Please try again.");
+    }
   };
 
   const loadSocialPostsForCampaign = async (campaignId: string) => {
@@ -1815,6 +1828,7 @@ function App() {
                         pushingToLeadDesk={pushingToLeadDesk}
                         pushToLeadDeskError={pushToLeadDeskError}
                         lastPushedLeadDeskId={lastPushedLeadDeskId}
+                        onArchive={handleArchiveSelectedProspect}
                       />
                     </div>
                   </div>
@@ -1838,11 +1852,12 @@ function App() {
                       onAddNote={handleAddProspectNote}
                       addingNote={addingNote}
                       addNoteError={addNoteError}
-                      onPushToLeadDesk={() => handlePushToLeadDesk(selectedProspect.id)}
-                      pushingToLeadDesk={pushingToLeadDesk}
-                      pushToLeadDeskError={pushToLeadDeskError}
-                      lastPushedLeadDeskId={lastPushedLeadDeskId}
-                    />
+                    onPushToLeadDesk={() => handlePushToLeadDesk(selectedProspect.id)}
+                    pushingToLeadDesk={pushingToLeadDesk}
+                    pushToLeadDeskError={pushToLeadDeskError}
+                    lastPushedLeadDeskId={lastPushedLeadDeskId}
+                    onArchive={handleArchiveSelectedProspect}
+                  />
                   </div>
                 )}
               </div>

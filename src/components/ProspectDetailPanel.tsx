@@ -64,6 +64,7 @@ interface ProspectDetailPanelProps {
   pushingToLeadDesk?: boolean;
   pushToLeadDeskError?: string | null;
   lastPushedLeadDeskId?: string | null;
+  onArchive: () => void;
 }
 
 export function ProspectDetailPanel({
@@ -84,6 +85,7 @@ export function ProspectDetailPanel({
   pushingToLeadDesk,
   pushToLeadDeskError,
   lastPushedLeadDeskId,
+  onArchive,
 }: ProspectDetailPanelProps) {
   const [noteDraft, setNoteDraft] = useState("");
   const status = prospect.status || "unknown";
@@ -174,6 +176,13 @@ export function ProspectDetailPanel({
             className="inline-flex items-center rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-60"
           >
             {pushingToLeadDesk ? "Sending…" : "Send to Lead Desk"}
+          </button>
+          <button
+            type="button"
+            onClick={onArchive}
+            className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+          >
+            Archive
           </button>
         </div>
         {updatingStatus && (
