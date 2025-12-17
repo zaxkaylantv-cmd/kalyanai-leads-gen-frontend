@@ -1,73 +1,31 @@
-# React + TypeScript + Vite
+## Lead Generation Engine — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Central UI for the outreach workflow: manage sources, prospects, campaigns, and social posts, plus CSV imports.
 
-Currently, two official plugins are available:
+### Architecture / API
+- Frontend: this repo (Vite/React/TS).
+- Backend: `/home/zax/apps/kalyanai-leads-gen-backend` (not modified here).
+- API base path (from `src/api.ts`): `BASE_URL = "/leads-gen-api"`.
+- Requirement: Nginx must proxy `/leads-gen-api/*` to the backend service (port/config handled outside this repo).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Key API calls observed
+- Sources: `GET/POST /sources`, `PATCH /sources/:id`, `POST /sources/:sourceId/prospects/bulk`.
+- Prospects: `GET /prospects`, `GET /prospects/:id`, `POST /prospects`, `PATCH /prospects/:id`, notes (`GET/POST /prospects/:id/notes`), status updates, LeadDesk push.
+- Campaigns & social posts: `GET /campaigns`, social posts CRUD/status, AI suggestions (`/ai/campaigns/:id/suggest-posts`).
+- AI enrichment preview: `/ai/sources/:id/enrich-preview`.
+- Health check assumed at `/health` (align with backend standard endpoints).
 
-## React Compiler
+### CSV import (minimum viable fields)
+- **Required:** company website/domain, work email.
+- **Recommended:** company name, first name, last name, job title.
+- **Optional:** LinkedIn URL, phone, size band/employee count, location (UK), industry/sub-industry.
+- Column mapping note: current DB fields seen in use — `companyName`, `contactName`, `role`, `email`, `phone`, `website`, `tags`, `status`, `ownerName`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Safety
+- Do not paste or commit secrets (.env contains sensitive values).
+- Do not modify other apps or paths outside this repo.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+### Roadmap (requested)
+- Archive/restore flows and delete-from-archive.
+- De-dupe by email/domain + suppression list.
+- Confirm CSV import + ICP application + website checking flow.
