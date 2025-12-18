@@ -4,6 +4,7 @@ export interface Source {
   type?: string | null;
   description?: string | null;
   metadata?: string | null;
+  archivedAt?: string | null;
   createdAt: string;
   targetIndustry?: string | null;
   companySize?: string | null;
@@ -132,6 +133,14 @@ export async function fetchSources(): Promise<Source[]> {
   return res.json();
 }
 
+export async function fetchArchivedSources(): Promise<Source[]> {
+  const res = await fetch(`${BASE_URL}/sources?archived=1`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch archived sources (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function createSource(input: { name: string }): Promise<Source> {
   const res = await fetch(`${BASE_URL}/sources`, {
     method: "POST",
@@ -167,6 +176,55 @@ export async function updateSourceIcp(
 
   if (!res.ok) {
     throw new Error(`Failed to update source (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function archiveSource(id: string): Promise<Source> {
+  const res = await fetch(`${BASE_URL}/sources/${encodeURIComponent(id)}/archive`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to archive source (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function restoreSource(id: string): Promise<Source> {
+  const res = await fetch(`${BASE_URL}/sources/${encodeURIComponent(id)}/restore`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to restore source (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function deleteSource(id: string): Promise<{ success: boolean; deletedId: string }> {
+  const res = await fetch(`${BASE_URL}/sources/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    let message = `Failed to delete source (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data?.error || message;
+    } catch (err) {
+      // ignore JSON parse errors and use default message
+    }
+    throw new Error(message);
   }
 
   return res.json();

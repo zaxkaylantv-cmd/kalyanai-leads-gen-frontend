@@ -21,6 +21,10 @@ import {
   createProspect,
   createSource,
   updateSourceIcp,
+  fetchArchivedSources,
+  archiveSource,
+  restoreSource,
+  deleteSource,
   fetchSuppressedProspects,
 } from "./api";
 import ProspectManualForm from "./components/ProspectManualForm";
@@ -74,6 +78,7 @@ function downloadCsv(filename: string, rows: string[][]): void {
 
 function App() {
   const [sources, setSources] = useState<Source[]>([]);
+  const [archivedSources, setArchivedSources] = useState<Source[]>([]);
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [socialPosts, setSocialPosts] = useState<SocialPost[]>([]);
@@ -115,6 +120,7 @@ function App() {
   const [prospectView, setProspectView] = useState<"active" | "archived" | "suppressed">("active");
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showManualProspectForm, setShowManualProspectForm] = useState(false);
+  const [showArchivedSources, setShowArchivedSources] = useState(false);
   const [editedSources, setEditedSources] = useState<Record<
     string,
     {
@@ -131,6 +137,9 @@ function App() {
   const [newSourceName, setNewSourceName] = useState("");
   const [creatingSource, setCreatingSource] = useState(false);
   const [createSourceError, setCreateSourceError] = useState<string | null>(null);
+  const [archivedSourcesLoading, setArchivedSourcesLoading] = useState(false);
+  const [archivedSourcesError, setArchivedSourcesError] = useState<string | null>(null);
+  const [sourceActionError, setSourceActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -174,6 +183,37 @@ function App() {
     };
   }, [prospectsReloadToken, prospectView]);
 
+  useEffect(() => {
+    if (!showArchivedSources) return;
+
+    let isMounted = true;
+
+    async function loadArchived() {
+      try {
+        setArchivedSourcesLoading(true);
+        setArchivedSourcesError(null);
+        const data = await fetchArchivedSources();
+        if (!isMounted) return;
+        setArchivedSources(data);
+      } catch (err) {
+        console.error("Failed to load archived sources", err);
+        if (isMounted) {
+          setArchivedSourcesError("Failed to load archived sources.");
+        }
+      } finally {
+        if (isMounted) {
+          setArchivedSourcesLoading(false);
+        }
+      }
+    }
+
+    loadArchived();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showArchivedSources]);
+
   function buildSourceIcpSummary(source?: Source | null): string | null {
     if (!source) return null;
     const parts: string[] = [];
@@ -206,6 +246,18 @@ function App() {
     setLastSavedSuggestionMessage(null);
   }, [selectedCampaignId]);
 
+  const refreshActiveSources = async () => {
+    const data = await fetchSources();
+    setSources(data);
+  };
+
+  const refreshArchivedSourcesList = async () => {
+    if (!showArchivedSources) return;
+    setArchivedSourcesError(null);
+    const data = await fetchArchivedSources();
+    setArchivedSources(data);
+  };
+
   const handleSourceCreated = (source: Source) => {
     setSources((prev) => [...prev, source]);
   };
@@ -227,6 +279,51 @@ function App() {
       setCreatingSource(false);
     }
   }
+
+  const handleArchiveSource = async (sourceId: string) => {
+    try {
+      setSourceActionError(null);
+      await archiveSource(sourceId);
+      await refreshActiveSources();
+      if (showArchivedSources) {
+        await refreshArchivedSourcesList();
+      }
+      if (selectedSourceId === sourceId) {
+        setSelectedSourceId("all");
+      }
+    } catch (err: any) {
+      console.error("Failed to archive source", err);
+      setSourceActionError(err?.message || "Failed to archive source.");
+    }
+  };
+
+  const handleRestoreSource = async (sourceId: string) => {
+    try {
+      setSourceActionError(null);
+      await restoreSource(sourceId);
+      await refreshActiveSources();
+      await refreshArchivedSourcesList();
+    } catch (err: any) {
+      console.error("Failed to restore source", err);
+      setSourceActionError(err?.message || "Failed to restore source.");
+    }
+  };
+
+  const handleDeleteSource = async (sourceId: string) => {
+    const confirmed = window.confirm(
+      "Delete this source permanently? This cannot be undone.",
+    );
+    if (!confirmed) return;
+    try {
+      setSourceActionError(null);
+      await deleteSource(sourceId);
+      await refreshArchivedSourcesList();
+    } catch (err: any) {
+      console.error("Failed to delete source", err);
+      setSourceActionError(err?.message || "Failed to delete source.");
+    }
+  };
+
   const primaryCampaign = campaigns[0];
   const primarySourceIcpSummary = buildSourceIcpSummary(primarySource || null);
   const postsForPrimaryCampaign = primaryCampaign
@@ -2021,6 +2118,21 @@ function App() {
                 </button>
               </div>
 
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-[#ff6a3c] focus:ring-[#ff6a3c]"
+                    checked={showArchivedSources}
+                    onChange={(e) => setShowArchivedSources(e.target.checked)}
+                  />
+                  Show archived sources
+                </label>
+                {sourceActionError && (
+                  <span className="text-xs text-red-600">{sourceActionError}</span>
+                )}
+              </div>
+
               {sources.length === 0 ? (
                 <p className="text-sm text-slate-500">No sources yet.</p>
               ) : (
@@ -2101,22 +2213,29 @@ function App() {
                         </div>
 
                         <div className="flex items-center justify-end gap-3">
-                          {state.error && (
-                            <span className="text-xs text-red-500">{state.error}</span>
-                          )}
-                          {state.success && !state.error && (
-                            <span className="text-xs text-emerald-600">Saved</span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleSaveSourceIcp(source)}
-                            disabled={state.saving}
-                            className={
-                              "inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition " +
-                              (state.saving
-                                ? "bg-slate-200 text-slate-500 cursor-wait"
-                                : "bg-[#ff6a3c] text-white hover:bg-[#ff5a28]")
-                            }
+                            {state.error && (
+                              <span className="text-xs text-red-500">{state.error}</span>
+                            )}
+                            {state.success && !state.error && (
+                              <span className="text-xs text-emerald-600">Saved</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleArchiveSource(source.id)}
+                              className="inline-flex items-center rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Archive
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSourceIcp(source)}
+                              disabled={state.saving}
+                              className={
+                                "inline-flex items-center rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition " +
+                                (state.saving
+                                  ? "bg-slate-200 text-slate-500 cursor-wait"
+                                  : "bg-[#ff6a3c] text-white hover:bg-[#ff5a28]")
+                              }
                           >
                             {state.saving ? "Saving…" : "Save"}
                           </button>
@@ -2124,6 +2243,58 @@ function App() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {showArchivedSources && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-800">Archived sources</h3>
+                    {archivedSourcesLoading && (
+                      <span className="text-xs text-slate-500">Loading…</span>
+                    )}
+                  </div>
+                  {archivedSourcesError && (
+                    <p className="text-xs text-red-600">{archivedSourcesError}</p>
+                  )}
+                  {archivedSources.length === 0 && !archivedSourcesLoading ? (
+                    <p className="text-sm text-slate-500">No archived sources.</p>
+                  ) : (
+                    archivedSources.map((source) => (
+                      <div
+                        key={source.id}
+                        className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">{source.name}</p>
+                            <p className="text-xs text-slate-500">Archived</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreSource(source.id)}
+                              className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSource(source.id)}
+                              className="inline-flex items-center rounded-full border border-red-100 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        {buildSourceIcpSummary(source) && (
+                          <p className="text-xs text-slate-600">
+                            {buildSourceIcpSummary(source)}
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </section>
