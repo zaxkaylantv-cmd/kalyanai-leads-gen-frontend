@@ -365,6 +365,21 @@ export async function restoreProspect(prospectId: string): Promise<Prospect> {
   return res.json();
 }
 
+export async function unsuppressProspect(prospectId: string): Promise<Prospect> {
+  const res = await fetch(`${BASE_URL}/prospects/${prospectId}/unsuppress`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to unsuppress prospect (${res.status})`);
+  }
+
+  return res.json();
+}
+
 export async function deleteProspect(
   prospectId: string,
 ): Promise<{ success: boolean; deletedId: string }> {

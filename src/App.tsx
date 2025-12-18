@@ -12,6 +12,7 @@ import {
   updateProspectStatus,
   fetchArchivedProspects,
   restoreProspect,
+  unsuppressProspect,
   deleteProspect,
   archiveProspect,
   fetchProspectNotes,
@@ -621,6 +622,18 @@ function App() {
     } catch (err) {
       console.error("Failed to restore prospect", err);
       setError("Could not restore prospect. Please try again.");
+    }
+  };
+
+  const handleUnsuppressSelectedProspect = async () => {
+    if (!selectedProspectId) return;
+    try {
+      await unsuppressProspect(selectedProspectId);
+      setProspectsReloadToken((prev) => prev + 1);
+      setSelectedProspectId(null);
+    } catch (err) {
+      console.error("Failed to unsuppress prospect", err);
+      setError("Could not unsuppress prospect. Please try again.");
     }
   };
 
@@ -1916,6 +1929,11 @@ function App() {
                         onArchive={handleArchiveSelectedProspect}
                         onRestore={handleRestoreSelectedProspect}
                         onDelete={handleDeleteSelectedProspect}
+                        onUnsuppress={
+                          prospectView === "suppressed"
+                            ? handleUnsuppressSelectedProspect
+                            : undefined
+                        }
                         mode={prospectView}
                       />
                     </div>
@@ -1947,6 +1965,11 @@ function App() {
                     onArchive={handleArchiveSelectedProspect}
                     onRestore={handleRestoreSelectedProspect}
                     onDelete={handleDeleteSelectedProspect}
+                    onUnsuppress={
+                      prospectView === "suppressed"
+                        ? handleUnsuppressSelectedProspect
+                        : undefined
+                    }
                     mode={prospectView}
                   />
                   </div>

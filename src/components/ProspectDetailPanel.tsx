@@ -67,6 +67,7 @@ interface ProspectDetailPanelProps {
   onArchive: () => void;
   onRestore?: () => void;
   onDelete?: () => void;
+  onUnsuppress?: () => void;
   mode?: "active" | "archived" | "suppressed";
 }
 
@@ -92,6 +93,7 @@ export function ProspectDetailPanel({
   onDelete,
   mode = "active",
   onArchive,
+  onUnsuppress,
 }: ProspectDetailPanelProps) {
   const isArchived = mode === "archived";
   const [noteDraft, setNoteDraft] = useState("");
@@ -184,6 +186,15 @@ export function ProspectDetailPanel({
           >
             {pushingToLeadDesk ? "Sending…" : "Send to Lead Desk"}
           </button>
+          {mode === "suppressed" && (
+            <button
+              type="button"
+              onClick={onUnsuppress}
+              className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Unsuppress
+            </button>
+          )}
           {!isArchived && (
             <button
               type="button"
